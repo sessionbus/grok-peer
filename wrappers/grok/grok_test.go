@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antst/sessionbus-peers/internal/testsocket"
-	"github.com/antst/sessionbus-peers/wrappers/host"
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
+	"github.com/sessionbus/peer-common/host"
+	"github.com/sessionbus/peer-common/testsocket"
 )
 
 const testSessionID = "01a075aa-7c7e-7f21-87dd-28c7b43f5bbc"

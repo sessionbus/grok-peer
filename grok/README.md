@@ -8,7 +8,7 @@ as a lane. Both modes use one Go binary and the same permanent plugin.
 Install native Grok first, then run the public installer in your normal login:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/antst/sessionbus-peers/main/scripts/install-grok.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sessionbus/grok-peer/main/scripts/install-grok.sh | sh
 ```
 
 For a source build, run `scripts/package-product grok /absolute/output`, extract

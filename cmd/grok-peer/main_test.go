@@ -11,8 +11,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/antst/sessionbus-peers/wrappers/grok"
-	"github.com/antst/sessionbus-peers/wrappers/host"
+	"github.com/sessionbus/grok-peer/wrappers/grok"
+	"github.com/sessionbus/peer-common/host"
 )
 
 func TestLaneModeRejectsArguments(t *testing.T) {
