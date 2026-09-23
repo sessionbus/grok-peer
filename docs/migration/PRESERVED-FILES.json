@@ -1,0 +1,1403 @@
+{
+ "source": "710e5d33369cba4fb9468cd24fea0fe844a0219d",
+ "status": "frozen before editing",
+ "shared_module": {
+  "module": "github.com/sessionbus/peer-common",
+  "version": "v0.0.0-20260922143100-eb655f686e44",
+  "commit": "eb655f686e4456a4c1121054763318e3d27e89b0"
+ },
+ "file_count": 89,
+ "test_function_count": 164,
+ "files": [
+  {
+   "path": "cmd/grok-peer/main.go",
+   "sha256": "d8c85e4ce1cd4a1ffb4cddbdfa7236780f75ddebbb8ba1105a68ec40a3ddde84",
+   "git_blob": "2ebe5a39f95301a4cfed3fbff9ece10908d151cf",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "cmd/grok-peer/main.go"
+   }
+  },
+  {
+   "path": "cmd/grok-peer/main_test.go",
+   "sha256": "01d640666f7afada55b271f8725eb9b06d397be23fc2dc8e3b0836b414e3680b",
+   "git_blob": "8b243d48c9e90e55a83c6a63c93112ab5bd87e40",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestLaneModeRejectsArguments",
+    "TestManagedHelperRequiresMatchingNativeLeader",
+    "TestSharedMCPEOFSettlesActualCaller"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "cmd/grok-peer/main_test.go"
+   }
+  },
+  {
+   "path": "docs/designs/claude-0.5.0/held-lane-skills/grok-lane/SKILL.md",
+   "sha256": "38def3b858cbf6ddfb24ecbaaa503897a6196910c1d4a08bff7453d19dda4947",
+   "git_blob": "e3155800ff707a0037a85c53fafc2c9a135c8b44",
+   "mode": "100644",
+   "class": "held-lane-reference",
+   "permitted_change": "byte-identical copy of the held Grok lane reference",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/legacy-lane-skill/SKILL.md"
+   }
+  },
+  {
+   "path": "docs/designs/claude-0.5.0/held-lane-skills/grok-lane/references/contract.md",
+   "sha256": "558f57cc3274924f339a880b844ba51dea8ae49ef152351af033e326d79da887",
+   "git_blob": "a9e8a1347ac59e508e81949076b6e2e16a6a36aa",
+   "mode": "100644",
+   "class": "held-lane-reference",
+   "permitted_change": "byte-identical copy of the held Grok lane reference",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/legacy-lane-skill/references/contract.md"
+   }
+  },
+  {
+   "path": "docs/designs/claude-0.5.0/held-lane-skills/grok-lane/references/install.md",
+   "sha256": "051d27d1eb27114c97e1870c705469be3d26eb7ca442393471d2530e7ee8fa9c",
+   "git_blob": "e7e91ff887d4bbf68146fa98c39587cbb97efb14",
+   "mode": "100644",
+   "class": "held-lane-reference",
+   "permitted_change": "byte-identical copy of the held Grok lane reference",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/legacy-lane-skill/references/install.md"
+   }
+  },
+  {
+   "path": "docs/designs/claude-0.5.0/held-lane-skills/grok-lane/scripts/lane-preflight",
+   "sha256": "b08b5d6a6c464954206603436b0fdef7eda6f750a69824ccbbff4f7a2a341bf1",
+   "git_blob": "1115c7a3b92164f8312ae86e46dea84265131ea4",
+   "mode": "100755",
+   "class": "held-lane-reference",
+   "permitted_change": "byte-identical copy of the held Grok lane reference",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/legacy-lane-skill/scripts/lane-preflight"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/ACCEPTANCE.md",
+   "sha256": "649456a82e8013c37e152eebe98e2dabe5604e438240ca462f58fb5431243131",
+   "git_blob": "3472fba4d10223ce6c95ea6141bdb77f2f8f52b7",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/ACCEPTANCE.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/ACTIVATION-AMENDMENT.md",
+   "sha256": "e7b2f65119d3a6ac048c530888cf5d88fe33c2b84d60a38ccbcd70cc9a1df25b",
+   "git_blob": "29d59eea8b40cb7d92f5310bbdb24446855ca092",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/ACTIVATION-AMENDMENT.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/CONTRACT.md",
+   "sha256": "0e838e249065be807c3e136bd5eafa5da571ad8b0b4be1287ef5b74dbf695d75",
+   "git_blob": "6007ddbca30a29c8e3c95f590541029ac7e20436",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/CONTRACT.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/DELIVERY-AMENDMENT.md",
+   "sha256": "7207a7f2a8a77eeb78077963b67e6e34c27f7bb7567fbaa868831b046d5d419b",
+   "git_blob": "3f59c17e39a2a0b0da06e9fed76b8e3e8c297e7f",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/DELIVERY-AMENDMENT.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/EVIDENCE.json",
+   "sha256": "a8886a915950ed9bcaa28c5038f0a2e4ad6e72009a69c4de6216a57fb41253d9",
+   "git_blob": "0a77f9d17a07e3b379074165dd9a72448c11fc2a",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/EVIDENCE.json"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/IMPLEMENTATION.md",
+   "sha256": "c914b742a8997b19130320eecd788144126310799e0ee4752657c23b19e78684",
+   "git_blob": "cd3ed0f621e2489a744d52378e6825c6f970dc0c",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/IMPLEMENTATION.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/NAME-AMENDMENT.md",
+   "sha256": "0c9c567fecf9a403838d25b3e2bc5f4212073acc9399d628989aff2c5f307c9c",
+   "git_blob": "dab9e0282778f2e2ec5766ec7079042122d4cb19",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/NAME-AMENDMENT.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/SIZE.json",
+   "sha256": "f28a1d5b706937673cbbd2d88c6f16e92814a7b83566765120d9cc199900db1c",
+   "git_blob": "a921db59079aae84ae8d486349bf905d8c3f8817",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/SIZE.json"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/held-skills/README.md",
+   "sha256": "9a30c4db80acde2c7b7d37be75d0748eee6f9e14392ba407d5d928c75babff6b",
+   "git_blob": "691323dd01aa820b5ed888285d5f4363f81e7727",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/held-skills/README.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/held-skills/agent-lanes/SKILL.md",
+   "sha256": "74806628c74c4b338ac8270b21819798e3c46da29678540c6cc0ff46a10b5fe3",
+   "git_blob": "76055d87d206bfb9eab991651dd5a5d09b40ca9f",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/held-skills/agent-lanes/SKILL.md"
+   }
+  },
+  {
+   "path": "docs/designs/grok-0.5.0/held-skills/agent-lanes/references/contract.md",
+   "sha256": "6b3872142075355ea3b341342aba08cb3d579f6c535d910f5376efb399606f2a",
+   "git_blob": "67c22d0b5f4613697920fc95740ba79ef85885be",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/designs/grok-0.5.0/held-skills/agent-lanes/references/contract.md"
+   }
+  },
+  {
+   "path": "docs/products/grok.md",
+   "sha256": "5090e5ea4355e412b71754f1f749aabb9f710bacfb2caa126840a3eefc72f015",
+   "git_blob": "a19f02c4cf5179e73d74caad5dc83313c18ffa5a",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "docs/products/grok.md"
+   }
+  },
+  {
+   "path": "grok/.grok-plugin/plugin.json",
+   "sha256": "cd10212c8be1f595057472ef82f7646f5faf8ecb01f730ef6cd256bbc117fe3f",
+   "git_blob": "6350dc253abf21db960f64d4bb36a605356d828b",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "grok/.grok-plugin/plugin.json"
+   }
+  },
+  {
+   "path": "grok/.mcp.json",
+   "sha256": "9c446c69d581ae15234fe5bac1fb43225d960cf0a980923871d5a9b52c71a43a",
+   "git_blob": "732b3e64a33ef2786f8ff238bd947980a93fc148",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "grok/.mcp.json"
+   }
+  },
+  {
+   "path": "grok/README.md",
+   "sha256": "8883012136acd9df68c1c97c1d647c8a6023446ceb219880f1e15dd3e444c5d7",
+   "git_blob": "92c830dffb24bf6e0ac6a3b1ec6719bb49082176",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "canonical release/bootstrap URL github.com/antst/sessionbus-peers -> github.com/sessionbus/grok-peer only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "grok/README.md"
+   }
+  },
+  {
+   "path": "grok/scripts/native-entry",
+   "sha256": "3bb18c86d1bc150bbacb85e103a7985c7cbdf92c790a41677acffe93dedb9c3b",
+   "git_blob": "14913bff18abc71d11626f0d5866a7bff3172ed2",
+   "mode": "100755",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "grok/scripts/native-entry"
+   }
+  },
+  {
+   "path": "grok/skills/sessionbus/SKILL.md",
+   "sha256": "6d0fc95cbab49e3f2c2d0e72a63b898f45875da08ca58b084871ca7d33a3a10c",
+   "git_blob": "3482a58e88c00eba962cfe976b0deb328f649695",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "byte-identical, except deletion-induced relative links repointed to immutable baseline source",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "grok/skills/sessionbus/SKILL.md"
+   }
+  },
+  {
+   "path": "internal/peerversion/version.go",
+   "sha256": "eba3a70af92bd7c53ca78422fc96b6b223c1cd81eca72a09430499a042982d2d",
+   "git_blob": "4026bc9e7e5b20ca11ffe6b8fdab54714960ecae",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "peerversion/version.go"
+   }
+  },
+  {
+   "path": "internal/peerversion/version_test.go",
+   "sha256": "10e619661cebe9dd7ac3c34e9d60a57ecf76cd48b1334cc501499968a1817aee",
+   "git_blob": "8e04c0a6a2cb608ae3d47c502793248538d88a93",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestResolvePublicVersionAndNativeEscape",
+    "TestResolveKeepsPrivateAndNonExactArguments"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "peerversion/version_test.go"
+   }
+  },
+  {
+   "path": "internal/testsocket/directory.go",
+   "sha256": "373cdb0e9219c4235ff88dc11a30987bec1725939a6e02df58087adf00ce74c0",
+   "git_blob": "9268dbbaf3b13ffbeb8efc4b5eb9c5befb350bd8",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "testsocket/directory.go"
+   }
+  },
+  {
+   "path": "internal/testsocket/directory_test.go",
+   "sha256": "6e40eed060759a1eaf1cac5e552bed9113e5e5e28e0132e597ce16a741e696dc",
+   "git_blob": "bb34848ac0b2c594ec75ad56ddc338e4b714f260",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestDirectoryUsesDefaultSessionSocketParent",
+    "TestDirectoryResolvesSymlinkBeforeBindingSocket"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "testsocket/directory_test.go"
+   }
+  },
+  {
+   "path": "scripts/cleanup-legacy/inventory.go",
+   "sha256": "df9433da5b355b42e5d407966e85803c87b25a7d5ba40d61d914b77a9a1837d6",
+   "git_blob": "f8fe397225380ac03bd62ac8eb7443fe94218e83",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "scripts/cleanup-legacy/inventory.go"
+   }
+  },
+  {
+   "path": "scripts/cleanup-legacy/main.go",
+   "sha256": "b427e8052bac1eeb3c1e9513746ee8ad7d0e1754fd8c25d8b6f1405de2ee4788",
+   "git_blob": "4525700fe2281a6b3e7526fba5dafa368dc391d6",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "scripts/cleanup-legacy/main.go"
+   }
+  },
+  {
+   "path": "scripts/cleanup-legacy/main_test.go",
+   "sha256": "4bae5028687ea87ef06dd8288ea4e31316d3c4ace7cf04ef971823e27e02d32a",
+   "git_blob": "c1c1a288144be064669efd383652f2d23d0ea762",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestQuarantinePreservesCurrentAliasAndLegacyTarget",
+    "TestConfigEditPreservesSymlinkConcurrentNativeChangesAndBackup",
+    "TestRejectIndirectParentAndReplacedAlias",
+    "TestNativeMCPRemovalIsOwnershipCheckedAndExact",
+    "TestGrokCleanupUsesNativeInstalledRepository"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "scripts/cleanup-legacy/main_test.go"
+   }
+  },
+  {
+   "path": "scripts/cleanup-legacy/review_boundary_test.go",
+   "sha256": "3b3f0a71481b1915ad2bc8529c9db8652791b14a745db47493d3830fdcca1151",
+   "git_blob": "ad687776e75ef199197a29554a82532bdfb3594d",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestReviewNativeRemovalRejectsConfigOutsideHome",
+    "TestReviewClaudeMixedScopesRefuseBeforePlan",
+    "TestReviewServiceOwnershipRequiresExecutableNotComment"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "scripts/cleanup-legacy/review_boundary_test.go"
+   }
+  },
+  {
+   "path": "scripts/install-grok.sh",
+   "sha256": "67bfcaf412141a1b805234ca7c7e591d55f91b736161932e075179074ee69d31",
+   "git_blob": "f65a21a47ce900aca4409f6729dfbb5092814482",
+   "mode": "100755",
+   "class": "grok-product",
+   "permitted_change": "canonical release/bootstrap URL github.com/antst/sessionbus-peers -> github.com/sessionbus/grok-peer only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "scripts/install-grok.sh"
+   }
+  },
+  {
+   "path": "scripts/release/grok_test.go",
+   "sha256": "0c4865fc6b6390f3896bbeebc74e637b265ad78c8fc23aa8ec21ebafc380fba9",
+   "git_blob": "86c676723516a74960be14c11a4c9c106972d3bf",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestGrokReinstallUsesNativeRepositoryInventory"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "scripts/release/grok_test.go"
+   }
+  },
+  {
+   "path": "scripts/release/install-product",
+   "sha256": "036bc6fb761bb8c09030a4a45f5f2b36d24875515278daeca2295361fb6f63c3",
+   "git_blob": "e3bb2ac78602443d12ab8f491123c2d29c785b04",
+   "mode": "100755",
+   "class": "shared-installer",
+   "permitted_change": "non-Grok ROLE case arms removed; Grok arm and shared preamble byte-identical",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "scripts/release/install-product"
+   }
+  },
+  {
+   "path": "wrappers/grok/acp.go",
+   "sha256": "da0aa44f02e78d05953aa137a7d531df83c7c20266e170091514ca9999964d5c",
+   "git_blob": "16d2f28c4fc8e5c1884a53b7fb9aedfc2cbd7a77",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/acp.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/acp_test.go",
+   "sha256": "b863ed92933dc368863fa3fc097f0c35014027490389bddb681d856072117d12",
+   "git_blob": "dbf5d2c827e48ff3da70cd0fb9b256840cbb8914",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestResponseBeforeEOFWins",
+    "TestACPConcurrentCallsAndCancelledDrain",
+    "TestACPActorAcknowledgementOrdering",
+    "TestACPQueuedWithoutActorAckFailsOnEOF",
+    "TestACPBlockedWriteCancellationClosesTransport",
+    "TestACPCancelledRequestsRemainBounded",
+    "TestACPMalformedCancelledResponseRetiresConnection"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/acp_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/alias_values_test.go",
+   "sha256": "2917882fefcfb9176c86c1d4af28d6189d5360d2adac399893bc8a12f1803e30",
+   "git_blob": "c8fa17b0b7ab389c916a0434eb531338f4ef1978",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestAliasTokensRemainRequiredNativeValues",
+    "TestAliasNativeValueBoundaries"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/alias_values_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/config_permission.go",
+   "sha256": "ec067f93f07c7bc1f8126ec2498006dabca549470a8dd914546858c09d5ba59e",
+   "git_blob": "86f66e9fc2927db5cfe1d9638863cfe84a13e909",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/config_permission.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/config_permission_other.go",
+   "sha256": "069e811519bfefe0cf9ce2d03ee0dfd2d71c017724a62d053859b2f7afbcb057",
+   "git_blob": "7c357eeca3953d0d720052b38faedd8ed1e64e26",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/config_permission_other.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/config_permission_test.go",
+   "sha256": "20150098b5534246214377c4c97178e186fdb75bd9c20a3642cc59174281fc06",
+   "git_blob": "68e7ecf5973b109b8a9de8bd5854fa6fb26656c3",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestEnsureSessionbusPermissionPreservesNativeRepresentation",
+    "TestEnsureSessionbusPermissionIsIdempotent",
+    "TestEnsureSessionbusPermissionRejectsUnsafeInputWithoutRewrite",
+    "TestEnsureSessionbusPermissionSanitizesTOMLError",
+    "TestEnsureSessionbusPermissionConcurrentStartsAddOneRule",
+    "TestEnsureSessionbusPermissionFollowsConfigSymlink",
+    "TestEnsureSessionbusPermissionCreatesNativeHomeAndPrivateConfig",
+    "TestAtomicConfigWriteRefusesInPlaceConcurrentChange",
+    "TestResolvedGrokHomeMatchesNativePrecedence"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/config_permission_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/config_permission_unix.go",
+   "sha256": "8d1ced832e3a6f4265e5a987dda7e6c7d0c7882152ce5181a89dd1780f076f21",
+   "git_blob": "68cdb7736ec3d813485df776bc7167a29ce7bbf1",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/config_permission_unix.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/continuation.go",
+   "sha256": "042fc081d554b4fa8e56c113c3b2eb10b5c86c8c259e3462d8e68feb643dea83",
+   "git_blob": "c0cd7010890d1b0690c9ed4e81ad5e0f05734e89",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/continuation.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/continuation_diagnostics_test.go",
+   "sha256": "13eba2981c5f0d005ce26fefe14148035815d2f9cb28451e5a05f8703c3ade07",
+   "git_blob": "8e976670456be829cd84466647eb81c5782b6e8e",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestContinuationDiagnosticsSurfaceEarlyWorkerDelivery",
+    "TestContinuationDiagnosticsSurfaceEarlyDirectDelivery",
+    "TestContinuationDiagnosticsObserveNativeFrame",
+    "TestContinuationDiagnosticsObserveNativeEOF"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/continuation_diagnostics_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/continuation_test.go",
+   "sha256": "d384d0d43d5042c18cd1303af1fd6cbf9eec34a1fea35dd2a190a47efd5da24f",
+   "git_blob": "fc9a4617b1102ab6e4b94272de68b567b6472272",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestActorAcknowledgedDeliveryNeverRequeuesAfterTerminal",
+    "TestActiveDeliveryUsesInterject",
+    "TestNativeContinuationEOFIsUnavailable",
+    "TestInterjectCancellationPreservesAttemptedNativeAccounting",
+    "TestWaitingInterjectCannotWakeRetiredRun",
+    "TestOwnedNativeOutputOverflowIsUnavailable",
+    "TestObserverLossSettlesUnclassifiedRunWithoutNativeTerminal",
+    "TestObserverWriteGateCannotSubmitAfterNativeTerminal"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/continuation_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/grok.go",
+   "sha256": "2a9977789b3d6e8b849431300b1a829f4fd9410783e24e908e1e7a9226d45aba",
+   "git_blob": "2ee2f873673a60ebc67295e884d767711d149ba7",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/grok.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/grok_test.go",
+   "sha256": "3fbb47d2f5d2d5af79a967999a24aa64fe21c067a58f754c5a977b94b77c9440",
+   "git_blob": "ea00109fc59720a49ecc4b7b8d3c772efaf71288",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestMain",
+    "TestFreshLaneNativeLifecycle",
+    "TestInterruptAndResume",
+    "TestResumeIdentityFailureRepliesBeforeCleanup",
+    "TestOmittedCwdAndSocketReadiness",
+    "TestArgumentsAndHello",
+    "TestLaneArgumentValidationPrecedesConfigWrite",
+    "TestLaneConfigFailurePrecedesEndpointAndNativeStart",
+    "TestCloseReturnsNativeErrorAfterCleanup",
+    "TestCancelledCloseJoinsNativeProcesses",
+    "TestKitRunTokenCrossings",
+    "TestIdleDeliveryJoinsOwnedPromptAndForeignChunksAreIgnored",
+    "TestChildExitWaitsForRunDoneBeforeShutdown",
+    "TestCompletedWorkerRunIsRetiredAtNextAdmission"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/grok_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/interrupt_test.go",
+   "sha256": "456495f75c224af8e48311fb778f5a1d31bcc103d5ec1b1106663d6d9dd960e5",
+   "git_blob": "27e8b3a89bda772e4c338226507c8ae72932f81b",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestWorkerInterruptJoinsCompletedWriteBeforeRunReturn",
+    "TestSeedInterruptCallbackAndFallbackShareOneCancel",
+    "TestWorkerBusLossSettlesBlockedInterruptWrite"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/interrupt_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/lane_endpoint.go",
+   "sha256": "75dfa03ba207ffdfff3c7109731444b915a541cad07f1698c0b8d8760df2c396",
+   "git_blob": "43789ff1c33ee36a4c2f9de640edf028dca77474",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/lane_endpoint.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/lane_endpoint_test.go",
+   "sha256": "def878b5fe25cbfbf02cea0764fe4e8a44b3438dee7790e545bfd150f5345ca5",
+   "git_blob": "a067bdc0481e38926f1780174653cf1596003398",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestResidentForwarderEOFCancelsCallerWaitWithoutAck"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/lane_endpoint_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/name_test.go",
+   "sha256": "44ff2f258648040d62a3efac9d848b2d93c0ac8e549bb3dc82a6726b899b6fd3",
+   "git_blob": "2f5e9f831709801999f66bd81c7dc7f074a02a93",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestInitialNameClaimIsEmptyAndExclusivePerLaunch",
+    "TestMCPInitializationPrecedesHeldInitialNativeRename",
+    "TestFailedInitialRenameNeverTransfersClaim"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/name_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/native_display_test.go",
+   "sha256": "a50804bdab466c29988d7b3cab75a78e657fa3b6eaa76b807dc8c7fd8bd52032",
+   "git_blob": "fb1cbeba1d8bc8cb6bf3310217712b4770e3f268",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestNativeRunningTextMatchesSingleTextBlockProjection",
+    "TestInitialPromptAdmissionUsesNativeTrimmedDisplay",
+    "TestInitialPromptAdmissionKeepsInternalWhitespaceStrict",
+    "TestContinuationAdmissionUsesNativeTrimmedDisplay"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/native_display_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/package_test.go",
+   "sha256": "9a2bedce111e6437fc9558ef083b4cfb1d317a1f10f7e2f35f8d22ce59f2a906",
+   "git_blob": "cb827d96a76ba81fcf59492df5c09f1df58a3737",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestPackagedPrivateEntryIsInertAndOnlyGenericSkillIsInstalled"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/package_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/peer.go",
+   "sha256": "bccf3b1d6ccb38c26a8b1240e1abb984f963f3b616b1408bd371571d31f39d9d",
+   "git_blob": "82480ea9cca3c848628d6cff82408c802a7dccec",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/peer.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/peer_owner.go",
+   "sha256": "e49efc1d365a90dc6291d8dcf355e5168f5e4d77bdcf8019ebcefd091e13efa2",
+   "git_blob": "0d41941b192156b8e4afd491fad2f807f84554a1",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/peer_owner.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/peer_test.go",
+   "sha256": "aaad7e0bac2b44991d994a070470c023ab01b74698aa389352c8912656e364e0",
+   "git_blob": "c01cfa1b819a3565d99dfa2461733c95440e6c36",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestInteractivePlan",
+    "TestManagedInteractiveConfigFailurePrecedesNativeStart",
+    "TestManagedInteractiveDenyValidationPrecedesConfigWrite",
+    "TestManagedDenyRejectedBeforeNativeStart",
+    "TestNativeTitleEventsRefreshPeerWithoutDelivery",
+    "TestPeerSurvivesAbsentDaemonAndReconnectsWithoutReplay",
+    "TestPeerSupersededIsTerminalAndJoinsObserver",
+    "TestProductSessionIDsCreateDistinctPeers",
+    "TestPeerMCPServesWhileBusAdmissionIsHeld",
+    "TestPeerDeliveryOwnerShutdownCrossesBlockedInterject",
+    "TestPeerDeliveryOwnerSerializesTwoReceipts",
+    "TestPeerHelperRequiresProductIdentity",
+    "TestInteractiveLauncherOwnsLeaderHoldAndTUI",
+    "TestStartupHoldExitStopsInteractiveOwner",
+    "TestInteractiveLauncherReturnsProductExit",
+    "TestLeaderCreatesDefaultStateRoot",
+    "TestExactRosterAuthority",
+    "TestPeerShutdownKillsItsObserverProcessGroup",
+    "TestResumingSameNativeIDUsesNewLaunchResources"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/peer_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/permission.go",
+   "sha256": "95d0fb812d68aa8aa88f13d575e80b0e5d66b2208a1be656811617fc180e5ad5",
+   "git_blob": "464e104a4dfae50fb54a26463aee40792941778e",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/permission.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/permission_test.go",
+   "sha256": "5ea32acbc431b90fb51ee0e83828a5abe87ea8d43ef25e7029eb7bab532b4e27",
+   "git_blob": "8c469fdd8b80f0aa2e30111a69afdfbe621d6f3a",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestGrokGlobMatchesNativeOracleCorpus",
+    "TestDenyReachesSessionbusMatchesNativeRuleParser",
+    "TestInteractivePolicyProjection",
+    "TestInteractivePolicyRejectsManagedDeny",
+    "TestInteractivePolicyRetainsNativeMalformedValueFailure"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/permission_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/process_darwin_test.go",
+   "sha256": "6b7810fe9beea4e6a95a5e027c396aea0a87e577083f89e52a8ee19e8106787a",
+   "git_blob": "1f997d7c2fb912c8f0a91d4a3060c3e5272173ea",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/process_darwin_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/process_linux_test.go",
+   "sha256": "0e6f6b2cbf0f9508466b15e9473b404cff54fff94ece40bbe629b9e8594dd43e",
+   "git_blob": "cf4d1111c820bf4eb3fb50f500de4126883a28af",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/process_linux_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/prompt_ownership_test.go",
+   "sha256": "bc4e194b5c5b15c135388ed4c12794653bd20576e9247b8a1f97dd41d3410a54",
+   "git_blob": "3b2411f4422c781cab3c66a7bfd6d286ee98a8c2",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestWorkerDeliveryUsesAdmittedOwnerBeforePromptWriteReturns",
+    "TestPendingOwnerDeliveryCancellationWaitsForNativeAdmission",
+    "TestPendingOwnerWaitsForPrimaryAdmissionOrLoss",
+    "TestPendingOwnerInterruptJoinsHeldPromptWrite"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/prompt_ownership_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/review_continuation_test.go",
+   "sha256": "9be0ce98703284b060b1fbd01c686decb7e149315ee3e6dbdbffcc1ce3979f9d",
+   "git_blob": "0a421ad2e4d8b8de734c800ead6f5aa45546f115",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestReviewOverflowCannotReleaseLiveContinuation"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/review_continuation_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/review_readiness_test.go",
+   "sha256": "4979316869ecdc3514f85b97dc10fa993d1f29d2a45cea706b4a646bb6de4447",
+   "git_blob": "ee90bfa0a9154a6be92c47b6c1fa484d7ea7028b",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestReviewGrokReadinessSettlesOnPrimaryEOF",
+    "TestReadyHelperLossPreventsOpenCommit"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/review_readiness_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/review_seed_boundary_test.go",
+   "sha256": "03a5cc1bef066208f0b9858f1885146b9aaa4289376a40f0d0b7463ee9303d95",
+   "git_blob": "98589969bf19a0ff5475a16f23aa66bc6c1a3430",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestReviewGrokSeedRefusalWithoutAdmissionSettles",
+    "TestReviewGrokReplayCannotBindAdmission"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/review_seed_boundary_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/review_terminal_failure_test.go",
+   "sha256": "1c548d155be5782a782817fb6b432226945d2c8e10538e47bd773136b7ac1245",
+   "git_blob": "4d39dd48fb27d6acfc536a40fa126a60fe9294b2",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestReviewTerminalMismatchCannotReleaseLiveContinuation"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/review_terminal_failure_test.go"
+   }
+  },
+  {
+   "path": "wrappers/grok/wake_worker_test.go",
+   "sha256": "d16d7d05b9d4971460078746bc1686e2a242ed4f10afdfe242a32a9f2d7c92e7",
+   "git_blob": "d1e6c299d6dd3cad9e4622d1504b924d73677ae6",
+   "mode": "100644",
+   "class": "grok-product",
+   "permitted_change": "Go module import relocation and gofmt import ordering only",
+   "test_functions": [
+    "TestGrokWorkerSeedAdmissionReceiptAndCursor"
+   ],
+   "current_location": {
+    "repository": "sessionbus/grok-peer",
+    "path": "wrappers/grok/wake_worker_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/endpoint.go",
+   "sha256": "dada1a15bdf425e18e844d67e609b446d22622d5ca7c81b24aeb23a9a2fca832",
+   "git_blob": "41c9766efc10dbfabf3719c8082c08539d746aa1",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/endpoint.go"
+   }
+  },
+  {
+   "path": "wrappers/host/endpoint_test.go",
+   "sha256": "9ec9fe16cc432a6e2feda44a65dcf7086fd58117afc84fae4e7e7f26cffa2a9e",
+   "git_blob": "299f437249ad46a867d8419a001acac6ae238a45",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestPrivateEndpointBridgeCancel",
+    "TestPrivateEndpointReplacesStalePath"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/endpoint_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/handoff.go",
+   "sha256": "8385aa6586d3c66a21220ea360e94b51191a9c221e217a929fe9628155026a92",
+   "git_blob": "56218b2864778817c2ff2b060e8f2c85c72bf103",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/handoff.go"
+   }
+  },
+  {
+   "path": "wrappers/host/handoff_test.go",
+   "sha256": "eb32e0ecab777c3dba61957283bc2682f69d59c73b39f1f0f2377761d404a183",
+   "git_blob": "e24850651da06964cd368d646985a1d79122ab0d",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestHandoffDeliveryAndQueueCommit",
+    "TestHandoffFailedCreationKeepsFullQueue",
+    "TestHandoffFailedCreationRestoresPendingDelivery",
+    "TestHandoffFailedCreationPreservesAdmissionOrder",
+    "TestHandoffClaimAndFinish",
+    "TestHandoffClaimableDeliveryReportsQueuedAcrossTerminal",
+    "TestHandoffSDKInterruptCrossings"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/handoff_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/launch.go",
+   "sha256": "02c82ac348716cab696449539804c754e0b082302f6c652bcd54cfdb3161c8f9",
+   "git_blob": "0a1566c99ac1b5ec2c8822e63783d085e505f1da",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/launch.go"
+   }
+  },
+  {
+   "path": "wrappers/host/launch_test.go",
+   "sha256": "266be8c8599bab982a46a69652f46e1433558ba89b966db1f25bdeac8700dff4",
+   "git_blob": "0f2e983a3ba59bb3971dd1807ff546b54940b915",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestLaneModeUsesTokenPresence",
+    "TestLaunchTokenDigestLength",
+    "TestInteractivePlan",
+    "TestInteractivePlanErrors",
+    "TestClassifiedInteractivePlanDefersProjectionErrors",
+    "TestBuildArgumentsTable",
+    "TestChildOwnershipTable",
+    "TestOwnedChildHelper",
+    "TestChildCloseIgnoresStoppedProcessNoise",
+    "TestChildOutputDrainsAfterExit"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/launch_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/lock.go",
+   "sha256": "84159d31dc79d3a506d532e35cbe1cfdf99ea5e74784bacbff84221c6c0e5d12",
+   "git_blob": "9e31828c1ef4e02cd36d66a6f71705a035903fed",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/lock.go"
+   }
+  },
+  {
+   "path": "wrappers/host/lock_test.go",
+   "sha256": "8a252811f328812037f66403e7735716f4806ac4ef420734127a93561dc30d97",
+   "git_blob": "1e2e1053c527451965954653bc8a0b563db81c5b",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestSessionLockStaleFileAndContention",
+    "TestSessionLockRenamePreservesClaim",
+    "TestSessionLockOrderlyCloseAllowsResume",
+    "TestSessionLockRenameRecoversCrashStaleTarget",
+    "TestSessionLockRenameRetriesInodeMismatch",
+    "TestSessionLockRenamePreservesRecreatedTarget",
+    "TestSessionLockRenameDoesNotReplaceHolder"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/lock_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/not_running.go",
+   "sha256": "65dd0e7a37acec2da346627869309af268d6c5b68b5452a586d5bf1e240e9f5d",
+   "git_blob": "e62a0158d4f28d01f3c21183fe1e5022eb810482",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/not_running.go"
+   }
+  },
+  {
+   "path": "wrappers/host/render.go",
+   "sha256": "5825cf7f4f178393f1c424a647fe716a236df65484ff00456684f7c75110a4bf",
+   "git_blob": "df5de0b77e76d0c5b69395c486fb1779ec6ae3f5",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/render.go"
+   }
+  },
+  {
+   "path": "wrappers/host/render_test.go",
+   "sha256": "afe8e1a16480c62217049e42e209c1bd7f8bf7174b34232179bc994dcc637d22",
+   "git_blob": "cd8a200676d5eda8577d2cd7696928939218a2ea",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestRendererMatchesC5Fixture"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/render_test.go"
+   }
+  },
+  {
+   "path": "wrappers/host/testdata/native-message-envelope.json",
+   "sha256": "3b6fd04eb1d829f0e5313e350e624ebc27cd2e1e86286a68e395dd731e6d46bf",
+   "git_blob": "3b16a853d38d0aa45d874a038498b950000fb24b",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "host/testdata/native-message-envelope.json"
+   }
+  },
+  {
+   "path": "wrappers/mcp/SESSIONBUS.md",
+   "sha256": "ff6fe51ed21e1350845bd111fc6686774e1529409c80da7eff43b0987ba621e9",
+   "git_blob": "58d04d81c5da4d51721b43db2170c5b6804cca5e",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/SESSIONBUS.md"
+   }
+  },
+  {
+   "path": "wrappers/mcp/lane.go",
+   "sha256": "8b04b2461decde1b1ae0d82bdc2ec78f2f7565cbbcd958c3476bbb1f59a444f5",
+   "git_blob": "a8886f4611d8914928405c78f159be5a2bac2010",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/lane.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/lane_test.go",
+   "sha256": "e7445ffaed03a51edd3e40439f70da2d407097f2b5af36c3542f57522298a139",
+   "git_blob": "66dc1f002f96ac1333adc06eb8474fa6bace6311",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestLaneBackendCrossingCallsAndErrors",
+    "TestLaneBackendRequiresSocket",
+    "TestPrivateActionKeepsCallerInResidentServer",
+    "TestPrivateActionPreservesWorkerCollectionError",
+    "TestServeLaneJoinsAdmittedActions"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/lane_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/self_info_test.go",
+   "sha256": "1d74e4cc9cacd08dc3423cb8b8a1164159c2fd38cb6402421f31617ab15d7e06",
+   "git_blob": "073130230403e5ba252163908967176ac1eee19a",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestListSelfInfoSurvivesCallerAndNativeToolResponse"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/self_info_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/send_test.go",
+   "sha256": "fc02016425eb1383b3d084f83f9edbca5e226c4448ff52de2ccb6bc68725177c",
+   "git_blob": "60802795e39d7ab9c8e583307549e90a9fa0b94d",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestSendRejectsUnknownSummaryBeforeDispatch",
+    "TestAdvertisedArgumentsMatchPublicActionFieldUnion"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/send_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/server.go",
+   "sha256": "edf6a6e468b1be8296f285a0dac29bfb8c753792b76f90397bb0602267e264d3",
+   "git_blob": "f0ed6b8c6e849a20c599963c4943eb407c1df88e",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/server.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/server_test.go",
+   "sha256": "21b0d44c7d38cc8c26fda0073524b84426a8ecc2ea3ad5a52dcc8e4c484cfa0c",
+   "git_blob": "d3e17072971e004f26405fb06927b1e4f23a4993",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestServerMethods",
+    "TestInvalidRequests",
+    "TestToolArgumentsMustBeObject",
+    "TestServerUsesBackendCallerAfterPrepare",
+    "TestServerUsesStatelessActionBackend",
+    "TestServerReturnsOutputFailure",
+    "TestServerCancelWithStoppedOutput"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/server_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/sessionbus.go",
+   "sha256": "f7fe0a847a5fb58b005c61c86d97f83010866b11d407b458421ce63605c49cb7",
+   "git_blob": "926ed7bdd5f377158fcf6292b8f95fe1ff46203d",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/sessionbus.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/sessionbus_bounds_test.go",
+   "sha256": "e59d02ed325197568fa9c9daa7c1f72b197b69b1b7074000f9ba8b577c2402c5",
+   "git_blob": "3fba5851239e464f4b47f33d97f936f969cf7492",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestMCPBlockedResponsesDoNotHoldEOF",
+    "TestMCPBlockedOSPipeWriteJoinsOnEOF",
+    "TestMCPInitializedOnlyAfterSuccessfulWrite",
+    "TestMCPResponseWorkAndRetainedInputLimits",
+    "TestMCPReturnedPayloadBudgetStopsBlockedResponses",
+    "TestMCPFrameAndEscapedResultBounds",
+    "TestMCPCompletedActionDoesNotWriteAfterEOF",
+    "TestMCPResponseReservationsReleaseAndIDsCanBeReused",
+    "TestMCPOversizedPayloadStopsWithoutOutput",
+    "TestMCPCancelledCallsReleaseWorkWithoutReplies"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/sessionbus_bounds_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/sessionbus_test.go",
+   "sha256": "411caa0d710203944f75bd83002f11a36f929333beb854e5bbc4ae4fb9ac62ed",
+   "git_blob": "2286a88aed2a5952ce07ba65174d990aae401819",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestSessionbusNativeReportsAreExplicitAndHidden",
+    "TestSessionbusReportCannotShadowPublicTool",
+    "TestSessionbusMetadataIsPerNativeRequest",
+    "TestInactiveMCPStaysUntilEOFAndAdvertisesNothing"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/sessionbus_test.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/sessionbus_tools.go",
+   "sha256": "7c553b1ad6f8abf3c3da72417d1bf771b98cc31614cbe96aa2b9564da27f5924",
+   "git_blob": "2113cf19522f661bfec41f9e578ac23772455cd6",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/sessionbus_tools.go"
+   }
+  },
+  {
+   "path": "wrappers/mcp/trace_policy_test.go",
+   "sha256": "98f71c86987892c98f4dcdb02fd2c4cc1cf96f024b60328ac342281334f30875",
+   "git_blob": "c34073b1d148cc08d6cfd69758784dfd9cca6ec8",
+   "mode": "100644",
+   "class": "peer-common",
+   "permitted_change": "exact peer-common copy; Go import relocation and gofmt only",
+   "test_functions": [
+    "TestSpawnResultTraceSurvivesSDKAndMCP"
+   ],
+   "current_location": {
+    "repository": "sessionbus/peer-common",
+    "commit": "eb655f686e4456a4c1121054763318e3d27e89b0",
+    "path": "mcp/trace_policy_test.go"
+   }
+  }
+ ]
+}
