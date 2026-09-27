@@ -8,7 +8,7 @@ as a lane. Both modes use one Go binary and the same permanent plugin.
 Install native Grok first, then run the public installer in your normal login:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/antst/sessionbus-peers/main/scripts/install-grok.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sessionbus/grok-peer/main/scripts/install-grok.sh | sh
 ```
 
 For a source build, run `scripts/package-product grok /absolute/output`, extract
@@ -79,6 +79,13 @@ Use the single public `sessionbus__sessionbus` tool with `{action, arguments}`.
 `describe` selects capabilities by product; `spawn` uses `product:"grok-peer"`.
 No product-specific lane skill is installed. The skill documents
 spawn/start/run/status/wait/ack/interrupt/close/forget and completion pointers.
+
+A fresh lane's typed `model` is passed to the native `agent` subcommand, which
+the private leader applies to the new session. Typed `reasoning_effort` and the
+accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain top-level
+native options that native agent mode does not apply, and a resumed lane does not
+receive the typed model. The native grammar record is
+`docs/designs/grok-0.5.0/LANE-MODEL-PLACEMENT.md` in the source repository.
 
 An idle lane delivery returns NotRunning before native submission, so the daemon
 starts one owned prompt. Active native actor acknowledgment means `injected`

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antst/sessionbus-peers/internal/testsocket"
-	"github.com/antst/sessionbus-peers/wrappers/host"
 	kit "github.com/antst/sessionbus/bus/sdk/go"
+	"github.com/sessionbus/peer-common/host"
+	"github.com/sessionbus/peer-common/testsocket"
 )
 
 type continuationHarness struct {

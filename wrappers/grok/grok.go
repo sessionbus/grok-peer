@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/antst/sessionbus-peers/wrappers/host"
-	"github.com/antst/sessionbus-peers/wrappers/mcp"
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
+	"github.com/sessionbus/peer-common/host"
+	"github.com/sessionbus/peer-common/mcp"
 )
 
 const Product = "grok-peer"
@@ -789,11 +789,14 @@ func launchArguments(request sessionkit.OpenRequest, leader string) ([]string, e
 	if request.Open.ReasoningEffort != "" {
 		arguments = append(arguments, "--reasoning-effort", request.Open.ReasoningEffort)
 	}
+	// Accepted extras are top-level native options. Native agent mode reads its
+	// model only from the agent subcommand's own -m, so it follows "agent".
+	arguments = append(arguments, extra...)
+	arguments = append(arguments, "--leader-socket", leader, "agent")
 	if request.Open.Model != "" {
 		arguments = append(arguments, "-m", request.Open.Model)
 	}
-	arguments = append(arguments, extra...)
-	return append(arguments, "--leader-socket", leader, "agent", "--leader", "stdio"), nil
+	return append(arguments, "--leader", "stdio"), nil
 }
 
 var argumentRules = []host.ArgumentRule{

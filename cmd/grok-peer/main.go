@@ -14,11 +14,11 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/antst/sessionbus-peers/internal/peerversion"
-	"github.com/antst/sessionbus-peers/wrappers/grok"
-	"github.com/antst/sessionbus-peers/wrappers/host"
-	"github.com/antst/sessionbus-peers/wrappers/mcp"
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
+	"github.com/sessionbus/grok-peer/wrappers/grok"
+	"github.com/sessionbus/peer-common/host"
+	"github.com/sessionbus/peer-common/mcp"
+	"github.com/sessionbus/peer-common/peerversion"
 )
 
 func main() {
