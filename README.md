@@ -53,7 +53,8 @@ scripts/package-product grok ./dist
 
 Builds require Go 1.24 or newer; target installations do not need Go. Packaging
 supports Linux/macOS amd64/arm64. This extraction does not bump RELEASE_VERSION
-or the Grok native plugin manifest. Publication remains held during validation.
+or the Grok native plugin manifest.
+Release publication remains held pending behavioral acceptance and an owner release decision.
 
 Shared support uses the exact peer-common version/checksum in go.mod/go.sum.
 Native Grok versions are not pinned: users routinely update native clients.
@@ -64,7 +65,12 @@ and [preservation inventory](docs/migration/PRESERVED-FILES.json) track separati
 Historical behavior and limitations remain in [Grok facts](docs/products/grok.md)
 and the [Grok design and acceptance records](docs/designs/grok-0.5.0/ACCEPTANCE.md).
 Held lane skills stay documentation only and are not packaged or activated.
-Fresh extracted-build validation remains pending.
+Independent extraction review is complete, and source `abe912d` was installed
+twice on the permanent development host with byte-equal post-install
+observations (binary SHA-256 `0564ac7a7c8cc8a963b405c5f690b29add8b239da40a5d8b66919af5f4ab90dd`).
+Behavioral acceptance remains pending owner Grok authentication: no fresh
+authenticated model turn on the split build has been observed. Historical
+pre-split results are not rebound to it.
 
 ## Version reporting
 

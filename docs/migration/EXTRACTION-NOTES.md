@@ -46,10 +46,14 @@ Local protected-file normalization passed for all 89 files and 164 tests. A
 baseline/extracted archive comparison with the same revision found identical
 members, symlink and plugin payload. Only the README URLs, notices, trimmed
 installer and rebuilt binary differ. Both archive installers produced identical
-trees and identical native plugin commands in a disposable home. Fresh
-installation/acceptance and independent extraction review remain pending. A
-historical pass does not validate this new artifact. Release publication remains
-held and no version bump is made. Native client version updates are expected;
+trees and identical native plugin commands in a disposable home. Independent
+extraction review is complete; source `abe912d` and binary SHA-256
+`0564ac7a7c8cc8a963b405c5f690b29add8b239da40a5d8b66919af5f4ab90dd`
+were installed twice in the permanent home with byte-equal post-install
+observations. Behavioral acceptance remains pending owner Grok authentication,
+with zero model calls on this split build. A historical pass does not validate
+the new artifact. Release publication remains held and no version bump is made.
+Native client version updates are expected;
 exact native versions in evidence are provenance, not a compatibility allowlist.
 
 The historical wake acceptance source `a6b0735e202878bc80e6bb8eee0e1f2ba64708c7`
