@@ -80,6 +80,13 @@ Use the single public `sessionbus__sessionbus` tool with `{action, arguments}`.
 No product-specific lane skill is installed. The skill documents
 spawn/start/run/status/wait/ack/interrupt/close/forget and completion pointers.
 
+A fresh lane's typed `model` is passed to the native `agent` subcommand, which
+the private leader applies to the new session. Typed `reasoning_effort` and the
+accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain top-level
+native options that native agent mode does not apply, and a resumed lane does not
+receive the typed model. The native grammar record is
+`docs/designs/grok-0.5.0/LANE-MODEL-PLACEMENT.md` in the source repository.
+
 An idle lane delivery returns NotRunning before native submission, so the daemon
 starts one owned prompt. Active native actor acknowledgment means `injected`
 admission, not consumption; it is emitted at interject enqueue and does not wait
