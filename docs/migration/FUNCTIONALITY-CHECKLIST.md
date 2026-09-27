@@ -4,8 +4,9 @@ Baseline: original peers main `710e5d33369cba4fb9468cd24fea0fe844a0219d`.
 The F01–F20 requirement IDs are shared with the migration checklist. Product
 semantics and known limitations stay explicit; a failed check does not remove a
 requirement. Extraction source preservation and fresh installed behavior are
-separate evidence. Current status: local source checks pass; independent review,
-permanent installation and fresh installed acceptance are pending.
+separate evidence. Current status: independent source review and permanent
+installation are complete for `abe912d`; fresh authenticated behavioral
+acceptance is pending owner Grok authentication.
 
 | ID | Preserved functionality | Existing regression coverage | Installed evidence / limit |
 |---|---|---|---|
