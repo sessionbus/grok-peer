@@ -527,6 +527,41 @@ func TestInteractiveLauncherReturnsProductExit(t *testing.T) {
 	closeProcessHandle(holdPidfd)
 }
 
+func TestInteractiveLeaderExitRetiresLauncher(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	tuiPath, leaderPath, holdPath := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid")
+	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPath)
+	t.Setenv("GROK_TEST_LEADER_PID", leaderPath)
+	t.Setenv("GROK_TEST_OBSERVER_PID", holdPath)
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+	must(t, err)
+	done := make(chan error, 1)
+	go func() { done <- RunInteractive(context.Background(), plan) }()
+	tuiPID, leaderPID, holdPID := interactivePID(t, tuiPath), interactivePID(t, leaderPath), interactivePID(t, holdPath)
+	tuiPidfd, holdPidfd := pidfd(t, tuiPID), pidfd(t, holdPID)
+	defer closeProcessHandle(tuiPidfd)
+	defer closeProcessHandle(holdPidfd)
+	waitFrame(t, recordPath, "authenticate", 1)
+	launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+	must(t, err)
+	check(t, len(launch) == 1 && processRunning(t, tuiPidfd) && processRunning(t, holdPidfd), "interactive launch was not live: %v", launch)
+	must(t, syscall.Kill(leaderPID, syscall.SIGTERM))
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		_ = syscall.Kill(tuiPID, syscall.SIGTERM)
+		<-done
+		t.Fatal("launcher outlived its leader")
+	}
+	// The leader's own Wait error, then the direct TUI the launcher terminated and reaped.
+	check(t, strings.Contains(err.Error(), "Grok leader exited") && slices.Equal(exitedPIDs(err), []int{leaderPID, tuiPID}), "launcher error = %v", err)
+	check(t, !processRunning(t, holdPidfd) && errors.Is(syscall.Kill(-holdPID, 0), syscall.ESRCH), "startup hold group survived its leader")
+	check(t, !exists(launch[0]), "launch state survived its leader")
+}
+
 func TestLeaderCreatesDefaultStateRoot(t *testing.T) {
 	root := filepath.Join(testsocket.Directory(t), "state")
 	recordPath := filepath.Join(t.TempDir(), "record")
@@ -800,13 +835,35 @@ func mcpResponse(t *testing.T, encoder *json.Encoder, scanner *bufio.Scanner, id
 
 func interactivePidfd(t *testing.T, path string) processHandle {
 	t.Helper()
+	return pidfd(t, interactivePID(t, path))
+}
+
+func interactivePID(t *testing.T, path string) int {
+	t.Helper()
 	<-fileReady(path)
 	body, err := os.ReadFile(path)
 	must(t, err)
 	var pid int
 	_, err = fmt.Sscan(string(body), &pid)
 	must(t, err)
-	return pidfd(t, pid)
+	return pid
+}
+
+// exitedPIDs lists, in order, the processes whose Wait errors err carries.
+func exitedPIDs(err error) []int {
+	if exited, ok := err.(*exec.ExitError); ok {
+		return []int{exited.Pid()}
+	}
+	var pids []int
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, inner := range wrapped.Unwrap() {
+			pids = append(pids, exitedPIDs(inner)...)
+		}
+	case interface{ Unwrap() error }:
+		pids = exitedPIDs(wrapped.Unwrap())
+	}
+	return pids
 }
 
 func peerClientPIDs(t *testing.T, rows []json.RawMessage) []int {

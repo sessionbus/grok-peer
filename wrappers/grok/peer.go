@@ -110,6 +110,9 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 	case <-hold.done:
 		childErr := finishInteractiveChild(child, childDone, syscall.SIGTERM)
 		return finish(errors.Join(fmt.Errorf("Grok startup hold closed: %w", hold.err), childErr))
+	case <-leader.done:
+		childErr := finishInteractiveChild(child, childDone, syscall.SIGTERM)
+		return finish(errors.Join(errors.New("Grok leader exited"), leader.Wait(), childErr))
 	}
 }
 
