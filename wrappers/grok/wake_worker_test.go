@@ -90,7 +90,7 @@ func TestGrokWorkerSeedAdmissionReceiptAndCursor(t *testing.T) {
 			must(t, json.Unmarshal(hello.Params, &h))
 			check(t, h.SupportsMessageRun, "missing wake capability")
 			send(protocol.ResultBytes(hello.ID, "session.hello", struct{}{}))
-			send(protocol.RequestBytes(1, "session.open", kit.OpenRequest{Name: "seed@local", Groups: []string{}, Policy: &kit.LanePolicy{IdleMessage: "run"}}))
+			send(protocol.RequestBytes(1, "session.open", kit.OpenRequest{Name: "seed@local", Groups: []string{}, Policy: &kit.LanePolicy{}}))
 			check(t, next().Error == nil, "open failed")
 			d := delivery("owned-wake-marker")
 			d.RunID = "g/1"
