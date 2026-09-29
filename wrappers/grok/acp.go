@@ -11,12 +11,16 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 )
 
 const maxACPFrame = 1 << 20
 const maxACPPending = 256
 
 var errACPCapacity = errors.New("Grok ACP request capacity exhausted")
+
+// Reverse replies leave time for orderly cleanup before the daemon's 10-second close bound.
+const acpReverseReplyTimeout = 3 * time.Second
 
 type acpFrame struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -86,10 +90,11 @@ type acpClient struct {
 	admissions map[interjectionNotice]chan error
 	done       chan struct{}
 	notify     func(acpFrame)
+	replyWait  time.Duration
 }
 
 func newACPClient(role acpRole, input io.WriteCloser, output io.ReadCloser, notify func(acpFrame)) *acpClient {
-	c := &acpClient{role: role, input: input, output: output, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), notify: notify}
+	c := &acpClient{role: role, input: input, output: output, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), notify: notify, replyWait: acpReverseReplyTimeout}
 	c.writeGate <- struct{}{}
 	go c.read(output)
 	return c
@@ -111,7 +116,7 @@ func (c *acpClient) read(output io.ReadCloser) {
 			}
 			if c.role == acpPrimary {
 				reply := acpFrame{JSONRPC: "2.0", ID: json.RawMessage(`null`), Error: &acpError{Code: -32600, Message: "Invalid Request"}}
-				if err := c.sendContext(context.Background(), reply); err != nil {
+				if err := c.sendReverseReply(reply); err != nil {
 					c.finish(err)
 					return
 				}
@@ -132,7 +137,7 @@ func (c *acpClient) read(output io.ReadCloser) {
 				if frame.Method == "session/request_permission" {
 					reply.Result, reply.Error = json.RawMessage(`{"outcome":{"outcome":"cancelled"}}`), nil
 				}
-				if err := c.sendContext(context.Background(), reply); err != nil {
+				if err := c.sendReverseReply(reply); err != nil {
 					c.finish(err)
 					return
 				}
@@ -288,6 +293,11 @@ func (c *acpClient) requestSubmitting(ctx context.Context, method string, params
 }
 func (c *acpClient) sendContext(ctx context.Context, value any) error {
 	return c.sendSubmitting(ctx, value, nil)
+}
+func (c *acpClient) sendReverseReply(reply acpFrame) error {
+	ctx, cancel := context.WithTimeout(context.Background(), c.replyWait)
+	defer cancel()
+	return c.sendContext(ctx, reply)
 }
 func (c *acpClient) sendSubmitting(ctx context.Context, value any, submit func() error) error {
 	var body []byte

@@ -7,7 +7,22 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 )
+
+type blockedACPWriter struct {
+	entered  chan struct{}
+	closed   chan struct{}
+	returned chan struct{}
+}
+
+func (w *blockedACPWriter) Write([]byte) (int, error) {
+	close(w.entered)
+	<-w.closed
+	close(w.returned)
+	return 0, io.ErrClosedPipe
+}
+func (w *blockedACPWriter) Close() error { close(w.closed); return nil }
 
 func acpPipe(t *testing.T) (*acpClient, *json.Decoder, *json.Encoder, io.Closer) {
 	t.Helper()
@@ -132,6 +147,35 @@ func TestACPBlockedWriteCancellationClosesTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-c.done
+}
+
+func TestACPReverseReplyTimeoutRetiresConnection(t *testing.T) {
+	input := &blockedACPWriter{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	responseRead, responseWrite := io.Pipe()
+	c := &acpClient{role: acpPrimary, input: input, output: responseRead, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), replyWait: 20 * time.Millisecond}
+	c.writeGate <- struct{}{}
+	readDone := make(chan struct{})
+	go func() { c.read(responseRead); close(readDone) }()
+	t.Cleanup(func() { c.close(); _ = responseWrite.Close(); <-input.returned; <-readDone })
+	written := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":"blocked","method":"unknown"}`+"\n")
+		written <- err
+	}()
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
+	<-input.entered
+	select {
+	case <-c.done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("blocked reverse reply did not retire the connection")
+	}
+	if !errors.Is(c.err, context.DeadlineExceeded) {
+		t.Fatalf("reverse reply error = %v", c.err)
+	}
+	<-input.returned
+	<-readDone
 }
 
 func TestACPCancelledRequestsRemainBounded(t *testing.T) {
