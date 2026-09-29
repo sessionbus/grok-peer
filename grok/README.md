@@ -118,3 +118,23 @@ calls and deliveries are not replayed. Reconnection republishes the latest
 native identity and title. Native session end, supersession and owner shutdown
 remain terminal. Daemon-managed Worker lanes do not reconnect after losing
 their launch connection.
+
+## Private leader loss (known native limitation)
+
+If the private leader exits while native clients are still attached (the TUI or
+a lane's `agent --leader stdio` bridge), Grok's reconnect path can start a
+detached `grok agent leader --no-exit-on-disconnect --relay-on-demand` on the
+same private socket. This was observed on Grok 1.0.44 after TERM to the
+leader. The replacement runs in its own process group under PID 1 and
+survives the launcher's teardown, which covers only the processes the launcher
+started. Native Grok has no connect-only client option, and the wrapper does
+not search for or stop the replacement. Stop a leftover one by its exact PID
+after confirming its command line.
+
+The replacement starts without the wrapper's leader arguments. Per Grok 1.0.35
+source (not observed in use), it therefore runs native hourly auto-update, and
+its session-default permission mode comes from `config.toml` instead of the
+lane's `permission_mode`. TUI sessions and resumed lanes re-send their mode
+when they reconnect. A fresh lane replayed by the stdio bridge takes the
+config default instead. Permission rules, including the Sessionbus grant,
+come from the same config files in either case.
