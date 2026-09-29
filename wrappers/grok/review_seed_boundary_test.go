@@ -15,7 +15,7 @@ func reviewPrompt(t *testing.T) (*Wrapper, *nativePrompt, *json.Decoder, *json.E
 	rr, rw := io.Pipe()
 	sr, sw := io.Pipe()
 	p := &Wrapper{sessionID: "native"}
-	p.primary = newACPClient(rw, sr, p.receive)
+	p.primary = newACPClient(acpPrimary, rw, sr, p.receive)
 	t.Cleanup(func() { p.primary.close(); rr.Close(); sw.Close() })
 	decoder, encoder := json.NewDecoder(rr), json.NewEncoder(sw)
 	started := make(chan *nativePrompt, 1)

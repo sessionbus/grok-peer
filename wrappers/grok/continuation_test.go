@@ -37,8 +37,8 @@ func newContinuationHarness(t *testing.T, configure ...func(*grokSeedProduct)) *
 	sr, sw := io.Pipe()
 	or, ow := io.Pipe()
 	osr, osw := io.Pipe()
-	p.primary = newACPClient(rw, sr, p.receive)
-	p.observer = newACPClient(ow, osr, nil)
+	p.primary = newACPClient(acpPrimary, rw, sr, p.receive)
+	p.observer = newACPClient(acpObserver, ow, osr, nil)
 	product := &grokSeedProduct{Wrapper: p, returned: make(chan error, 8)}
 	for _, apply := range configure {
 		apply(product)

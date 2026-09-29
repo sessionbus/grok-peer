@@ -14,7 +14,7 @@ func TestReviewGrokReadinessSettlesOnPrimaryEOF(t *testing.T) {
 	responseRead, responseWrite := io.Pipe()
 	defer requestRead.Close()
 	p := &Wrapper{}
-	p.primary = newACPClient(requestWrite, responseRead, nil)
+	p.primary = newACPClient(acpPrimary, requestWrite, responseRead, nil)
 	defer p.primary.close()
 	endpoint := &grokEndpoint{owner: p, ready: make(chan struct{})}
 	responseWrite.Close()
@@ -34,7 +34,7 @@ func TestReadyHelperLossPreventsOpenCommit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	p := &Wrapper{ctx: ctx, cancel: cancel, nativeFailed: make(chan struct{})}
-	p.primary = newACPClient(requestWrite, responseRead, nil)
+	p.primary = newACPClient(acpPrimary, requestWrite, responseRead, nil)
 	defer p.primary.close()
 	endpoint := &grokEndpoint{owner: p, ready: make(chan struct{})}
 	helper := &laneToolOwner{endpoint: endpoint}

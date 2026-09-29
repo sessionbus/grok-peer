@@ -14,7 +14,7 @@ func acpPipe(t *testing.T) (*acpClient, *json.Decoder, *json.Encoder, io.Closer)
 	t.Helper()
 	requestRead, requestWrite := io.Pipe()
 	responseRead, responseWrite := io.Pipe()
-	c := newACPClient(requestWrite, responseRead, nil)
+	c := newACPClient(acpPrimary, requestWrite, responseRead, nil)
 	t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
 	return c, json.NewDecoder(requestRead), json.NewEncoder(responseWrite), responseWrite
 }
@@ -118,7 +118,7 @@ func TestACPQueuedWithoutActorAckFailsOnEOF(t *testing.T) {
 func TestACPBlockedWriteCancellationClosesTransport(t *testing.T) {
 	requestRead, requestWrite := io.Pipe()
 	responseRead, responseWrite := io.Pipe()
-	c := newACPClient(requestWrite, responseRead, nil)
+	c := newACPClient(acpPrimary, requestWrite, responseRead, nil)
 	defer c.close()
 	defer requestRead.Close()
 	defer responseWrite.Close()
@@ -243,7 +243,7 @@ func TestACPMalformedFramesAndReplyWriteFailureRemainFatal(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			requestRead, requestWrite := io.Pipe()
 			responseRead, responseWrite := io.Pipe()
-			c := newACPClient(requestWrite, responseRead, nil)
+			c := newACPClient(acpPrimary, requestWrite, responseRead, nil)
 			t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
 			if name == "reply-write" {
 				_ = requestRead.Close()
@@ -268,5 +268,54 @@ func TestACPMalformedFramesAndReplyWriteFailureRemainFatal(t *testing.T) {
 				t.Fatalf("malformed frame was answered: %v", err)
 			}
 		})
+	}
+}
+
+// Grok broadcasts shared interactions such as permission to every subscriber
+// and takes the first answer, so an observer consumes native client requests
+// unanswered and keeps serving the frames that follow.
+func TestACPObserverLeavesNativeClientRequestsUnanswered(t *testing.T) {
+	requestRead, requestWrite := io.Pipe()
+	responseRead, responseWrite := io.Pipe()
+	notified := make(chan string, 4)
+	c := newACPClient(acpObserver, requestWrite, responseRead, func(f acpFrame) { notified <- f.Method })
+	t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
+	written := make(chan acpFrame, 8)
+	go func() {
+		defer close(written)
+		d := json.NewDecoder(requestRead)
+		for {
+			var f acpFrame
+			if d.Decode(&f) != nil {
+				return
+			}
+			written <- f
+		}
+	}()
+	e := json.NewEncoder(responseWrite)
+	done := make(chan error, 1)
+	var renamed map[string]bool
+	go func() { done <- c.request(context.Background(), "_x.ai/session/rename", nil, &renamed) }()
+	rename := <-written
+	options := []map[string]string{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}}
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "id": 9, "method": "session/request_permission", "params": map[string]any{"sessionId": testSessionID, "toolCall": map[string]string{"toolCallId": "call-1"}, "options": options}}))
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "id": 10, "method": "_x.ai/ask_user_question", "params": map[string]any{"sessionId": testSessionID}}))
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "method": "_x.ai/sessions/changed"}))
+	replyACP(t, e, rename, map[string]bool{"success": true})
+	must(t, <-done)
+	check(t, renamed["success"], "response after native requests was not delivered: %v", renamed)
+	check(t, len(notified) == 1 && <-notified == "_x.ai/sessions/changed", "notification after native requests was not delivered")
+	// Any answer would precede this request on the one ordered writer.
+	go func() { done <- c.request(context.Background(), "barrier", nil, nil) }()
+	barrier := <-written
+	check(t, barrier.Method == "barrier", "observer answered a native request: %+v", barrier)
+	replyACP(t, e, barrier, map[string]any{})
+	must(t, <-done)
+	// Malformed input still retires an observer, and nothing else was written.
+	_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":11,"method":"session/request_permission","result":{}}`+"\n")
+	must(t, err)
+	<-c.done
+	for f := range written {
+		t.Fatalf("observer wrote %+v", f)
 	}
 }
