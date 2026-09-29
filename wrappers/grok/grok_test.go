@@ -40,6 +40,18 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.Setenv("GROK_HOME", home)
 	_ = os.Setenv("GROK_TEST_CHILD", "1")
+	// Lanes preflight the installed private alias beside the product binary.
+	bin, err := os.MkdirTemp("", "sessionbus-grok-test-bin-")
+	if err == nil {
+		err = installBinaryFixture(bin)
+	}
+	if err == nil {
+		err = os.Symlink(Product, filepath.Join(bin, PrivateAlias))
+	}
+	if err != nil {
+		panic(err)
+	}
+	executable = func() (string, error) { return filepath.Join(bin, Product), nil }
 	command = func(_ string, arguments ...string) *exec.Cmd {
 		args := append([]string{"-test.run=^$", "--"}, arguments...)
 		cmd := exec.Command(os.Args[0], args...)
@@ -48,6 +60,7 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	_ = os.RemoveAll(home)
+	_ = os.RemoveAll(bin)
 	os.Exit(code)
 }
 
@@ -314,6 +327,9 @@ func TestFreshLaneNativeLifecycle(t *testing.T) {
 	check(t, allStartsContain(frames, "--no-auto-update"), "an ACP client omitted --no-auto-update")
 	check(t, countFrames(frames, "initialize") == 3, "authenticated startup hold absent: %d handshakes", countFrames(frames, "initialize"))
 	open := findFrame(frames, "session/new")
+	alias, err := sessionbusAlias()
+	must(t, err)
+	check(t, strings.Contains(string(open), `"command":"`+alias+`"`), "native MCP command is not the preflighted alias: %s", open)
 	check(t, !strings.Contains(string(open), "--session-id") && strings.Contains(string(open), `"sessionbus"`) && strings.Contains(string(open), `"SESSIONBUS_LANE_SOCKET"`) && strings.Contains(string(open), `"yoloMode":true`), "fresh open = %s", open)
 	idle, err := p.Deliver(context.Background(), delivery("idle"), nil)
 	var notRunning *sessionkit.ProtocolError
@@ -447,6 +463,65 @@ func TestLaneArgumentValidationPrecedesConfigWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, grokConfigFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("config written before argument validation: %v", err)
+	}
+}
+
+func installBinaryFixture(dir string) error {
+	return os.WriteFile(filepath.Join(dir, Product), []byte("binary fixture"), 0700)
+}
+
+func TestSessionbusAliasFollowsPublicEntryToInstalledBinary(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	must(t, err)
+	public, installed := filepath.Join(root, "bin"), filepath.Join(root, "libexec")
+	must(t, os.MkdirAll(public, 0700))
+	must(t, os.MkdirAll(installed, 0700))
+	must(t, installBinaryFixture(installed))
+	must(t, os.Symlink(Product, filepath.Join(installed, PrivateAlias)))
+	must(t, os.Symlink(filepath.Join(installed, Product), filepath.Join(public, Product)))
+	previous := executable
+	executable = func() (string, error) { return filepath.Join(public, Product), nil }
+	t.Cleanup(func() { executable = previous })
+	alias, err := sessionbusAlias()
+	must(t, err)
+	check(t, alias == filepath.Join(installed, PrivateAlias), "alias = %q", alias)
+}
+
+func TestLaneIncompleteSessionbusAliasRefusesBeforeNativeStart(t *testing.T) {
+	for name, test := range map[string]struct {
+		prepare func(t *testing.T, alias string)
+		cause   string
+	}{
+		"missing":        {func(*testing.T, string) {}, "no such file or directory"},
+		"dangling":       {func(t *testing.T, alias string) { must(t, os.Symlink(alias+"-absent", alias)) }, "no such file or directory"},
+		"not-executable": {func(t *testing.T, alias string) { must(t, os.WriteFile(alias, []byte("#!/bin/sh\n"), 0600)) }, "not a regular executable"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home, recordPath := t.TempDir(), filepath.Join(t.TempDir(), "record")
+			bin, err := filepath.EvalSymlinks(t.TempDir())
+			must(t, err)
+			must(t, installBinaryFixture(bin))
+			t.Setenv("GROK_HOME", home)
+			t.Setenv("GROK_TEST_RECORD", recordPath)
+			alias := filepath.Join(bin, PrivateAlias)
+			test.prepare(t, alias)
+			installed := executable
+			executable = func() (string, error) { return filepath.Join(bin, Product), nil }
+			t.Cleanup(func() { executable = installed })
+			p := New(filepath.Join(testsocket.Directory(t), "sessionbus.sock"), "token")
+			p.SetCall(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil })
+			_, err = p.Open(context.Background(), sessionkit.OpenRequest{Name: "lane@local"})
+			if err == nil || !strings.Contains(err.Error(), "Grok Sessionbus integration is incomplete: "+alias+" is missing or not executable: ") || !strings.Contains(err.Error(), test.cause) {
+				t.Fatalf("alias failure = %v", err)
+			}
+			check(t, p.endpoint == nil, "lane endpoint created before alias preflight")
+			if _, err := os.Stat(recordPath); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("native started before alias preflight: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(home, grokConfigFile)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("config written before alias preflight: %v", err)
+			}
+		})
 	}
 }
 

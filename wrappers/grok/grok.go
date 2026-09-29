@@ -28,6 +28,7 @@ const PrivateAlias = "grok-peer-mcp"
 const grokReadyInterval = 25 * time.Millisecond
 
 var command = exec.Command
+var executable = os.Executable
 
 type nativeProcess struct {
 	cmd  *exec.Cmd
@@ -123,6 +124,10 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	if err != nil {
 		return sessionkit.OpenResult{}, err
 	}
+	alias, err := sessionbusAlias()
+	if err != nil {
+		return sessionkit.OpenResult{}, err
+	}
 	nativeEnv := nativeEnvironment()
 	if err = ensureSessionbusPermission(nativeEnv, request.Open.Cwd); err != nil {
 		return sessionkit.OpenResult{}, err
@@ -165,7 +170,7 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	p.primary, p.child, p.leader = primary, child, leader
 	p.mu.Unlock()
 	if err = initializeACP(ctx, primary); err == nil {
-		err = p.openSession(ctx, primary, request, endpoint.Path)
+		err = p.openSession(ctx, primary, request, alias, endpoint.Path)
 	}
 	if err == nil {
 		err = p.startObserver(ctx, request.Open.Cwd, name)
@@ -205,12 +210,8 @@ func (p *Wrapper) commitOpen(ctx context.Context, stopStartup func() bool) error
 	return nil
 }
 
-func (p *Wrapper) openSession(ctx context.Context, primary *acpClient, request sessionkit.OpenRequest, laneSocket string) error {
-	server, err := mcpServer(laneSocket)
-	if err != nil {
-		return err
-	}
-	params := map[string]any{"cwd": request.Open.Cwd, "mcpServers": []any{server}}
+func (p *Wrapper) openSession(ctx context.Context, primary *acpClient, request sessionkit.OpenRequest, alias, laneSocket string) error {
+	params := map[string]any{"cwd": request.Open.Cwd, "mcpServers": []any{mcpServer(alias, laneSocket)}}
 	if request.Open.PermissionMode != "" {
 		params["_meta"] = map[string]bool{"yoloMode": request.Open.PermissionMode == "bypassPermissions"}
 	}
@@ -245,7 +246,7 @@ func (p *Wrapper) openSession(ctx context.Context, primary *acpClient, request s
 
 	p.mu.Lock()
 	p.sessionID = identity
-	err = p.endpoint.validateSession(identity)
+	err := p.endpoint.validateSession(identity)
 	p.mu.Unlock()
 	if err != nil {
 		return err
@@ -760,12 +761,31 @@ func startNative(cmd *exec.Cmd) (*nativeProcess, error) {
 	return process, nil
 }
 
-func mcpServer(socket string) (map[string]any, error) {
-	executable, err := os.Executable()
-	if err != nil {
-		return nil, err
+// sessionbusAlias resolves the private MCP alias beside the installed binary,
+// even when the public entry was invoked through a symlink. Native Grok runs
+// it as the lane's Sessionbus server, so it must stat as a regular executable:
+// a link to the product binary qualifies, a dangling one does not.
+func sessionbusAlias() (string, error) {
+	self, err := executable()
+	if err == nil {
+		self, err = filepath.EvalSymlinks(self)
 	}
-	return map[string]any{"name": "sessionbus", "command": filepath.Join(filepath.Dir(executable), PrivateAlias), "args": []string{}, "env": []map[string]string{{"name": mcp.LaneSocketEnv, "value": socket}}}, nil
+	if err != nil {
+		return "", fmt.Errorf("Grok Sessionbus integration is incomplete: %w", err)
+	}
+	path := filepath.Join(filepath.Dir(self), PrivateAlias)
+	info, err := os.Stat(path)
+	if err == nil && (!info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0) {
+		err = errors.New("not a regular executable")
+	}
+	if err != nil {
+		return "", fmt.Errorf("Grok Sessionbus integration is incomplete: %s is missing or not executable: %w", path, err)
+	}
+	return path, nil
+}
+
+func mcpServer(alias, socket string) map[string]any {
+	return map[string]any{"name": "sessionbus", "command": alias, "args": []string{}, "env": []map[string]string{{"name": mcp.LaneSocketEnv, "value": socket}}}
 }
 
 func leaderSocket(socket, key string) string {
