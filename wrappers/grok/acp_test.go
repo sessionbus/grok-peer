@@ -198,6 +198,7 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 	reverse := func(id json.RawMessage, method string, params map[string]any, expected string) {
 		t.Helper()
 		params["sessionId"] = testSessionID
+		h.primaryWrite.SetEscapeHTML(false)
 		must(t, h.primaryWrite.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
 		var reply json.RawMessage
 		must(t, h.primaryRead.Decode(&reply))
@@ -211,7 +212,7 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 	reverse(json.RawMessage(`"unknown-\u0031"`), "fs/read_text_file", map[string]any{"path": "/etc/hostname"}, `{"jsonrpc":"2.0","id":"unknown-\u0031","error":{"code":-32601,"message":"Method not found"}}`)
 	h.answer(t, "p-g/1", "first-answer")
 	options := []map[string]string{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}}
-	reverse(json.RawMessage(`"permission-\u0032"`), "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, `{"jsonrpc":"2.0","id":"permission-\u0032","result":{"outcome":{"outcome":"cancelled"}}}`)
+	reverse(json.RawMessage(`"<permission&2>"`), "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, `{"jsonrpc":"2.0","id":"<permission&2>","result":{"outcome":{"outcome":"cancelled"}}}`)
 	h.terminal(t, "p-g/1", "end_turn")
 	replyACP(t, h.primaryWrite, original, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
 	readWorkerReadyID(t, h.bus, "g/1")

@@ -276,7 +276,17 @@ func (c *acpClient) sendContext(ctx context.Context, value any) error {
 	return c.sendSubmitting(ctx, value, nil)
 }
 func (c *acpClient) sendSubmitting(ctx context.Context, value any, submit func() error) error {
-	body, err := json.Marshal(value)
+	var body []byte
+	var err error
+	if frame, exactID := value.(acpFrame); exactID && frame.ID != nil {
+		var encoded bytes.Buffer
+		encoder := json.NewEncoder(&encoded)
+		encoder.SetEscapeHTML(false)
+		err = encoder.Encode(frame)
+		body = bytes.TrimSuffix(encoded.Bytes(), []byte{'\n'})
+	} else {
+		body, err = json.Marshal(value)
+	}
 	if err != nil {
 		return err
 	}
