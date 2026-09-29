@@ -100,9 +100,23 @@ func (c *acpClient) read(output io.ReadCloser) {
 	scanner.Buffer(make([]byte, 4096), maxACPFrame)
 	for scanner.Scan() {
 		var frame acpFrame
-		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.JSONRPC != "2.0" || !validACPID(frame.ID) {
+		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.JSONRPC != "2.0" {
 			c.finish(errors.New("malformed Grok ACP frame"))
 			return
+		}
+		if !validACPID(frame.ID) {
+			if frame.Method == "" || frame.Error != nil || len(frame.Result) != 0 {
+				c.finish(errors.New("malformed Grok ACP frame"))
+				return
+			}
+			if c.role == acpPrimary {
+				reply := acpFrame{JSONRPC: "2.0", ID: json.RawMessage(`null`), Error: &acpError{Code: -32600, Message: "Invalid Request"}}
+				if err := c.sendContext(context.Background(), reply); err != nil {
+					c.finish(err)
+					return
+				}
+			}
+			continue
 		}
 		if frame.ID != nil && frame.Method != "" {
 			if frame.Error != nil || len(frame.Result) != 0 {

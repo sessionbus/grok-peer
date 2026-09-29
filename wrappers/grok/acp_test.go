@@ -210,6 +210,7 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 	}
 	original := h.start(t, 2, "g/1", "owned-first")
 	reverse(json.RawMessage(`"unknown-\u0031"`), "fs/read_text_file", map[string]any{"path": "/etc/hostname"}, `{"jsonrpc":"2.0","id":"unknown-\u0031","error":{"code":-32601,"message":"Method not found"}}`)
+	reverse(json.RawMessage(`41`), "numeric/unknown", map[string]any{}, `{"jsonrpc":"2.0","id":41,"error":{"code":-32601,"message":"Method not found"}}`)
 	h.answer(t, "p-g/1", "first-answer")
 	options := []map[string]string{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}}
 	reverse(json.RawMessage(`"<permission&2>"`), "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, `{"jsonrpc":"2.0","id":"<permission&2>","result":{"outcome":{"outcome":"cancelled"}}}`)
@@ -243,24 +244,27 @@ func TestACPIDAbsentAndNullStayDistinct(t *testing.T) {
 	var reply json.RawMessage
 	must(t, json.NewDecoder(requestRead).Decode(&reply))
 	check(t, string(reply) == `{"jsonrpc":"2.0","id":null,"error":{"code":-32601,"message":"Method not found"}}`, "null ID reply: %s", reply)
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "method": "after-null"}))
+	check(t, <-notified == "after-null", "frame after null ID was not processed")
 }
 
-func TestACPInvalidIDShapesUseMalformedFramePath(t *testing.T) {
+func TestACPInvalidRequestIDShapesReplyAndContinue(t *testing.T) {
 	for name, id := range map[string]string{
 		"object": `{}`, "array": `[]`, "boolean": `true`, "fraction": `1.5`, "out-of-range": `9223372036854775808`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			requestRead, requestWrite := io.Pipe()
 			responseRead, responseWrite := io.Pipe()
-			c := newACPClient(acpPrimary, requestWrite, responseRead, nil)
+			notified := make(chan string, 1)
+			c := newACPClient(acpPrimary, requestWrite, responseRead, func(f acpFrame) { notified <- f.Method })
 			t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
 			_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":`+id+`,"method":"unknown"}`+"\n")
 			must(t, err)
-			<-c.done
-			c.mu.Lock()
-			err = c.err
-			c.mu.Unlock()
-			check(t, err != nil && err.Error() == "malformed Grok ACP frame", "%s ID error: %v", name, err)
+			var reply json.RawMessage
+			must(t, json.NewDecoder(requestRead).Decode(&reply))
+			check(t, string(reply) == `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request"}}`, "%s ID reply: %s", name, reply)
+			must(t, json.NewEncoder(responseWrite).Encode(map[string]any{"jsonrpc": "2.0", "method": "after-invalid"}))
+			check(t, <-notified == "after-invalid", "%s ID retired the connection", name)
 		})
 	}
 }
