@@ -5,10 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
+	"time"
 )
+
+type blockedACPWriter struct {
+	entered  chan struct{}
+	closed   chan struct{}
+	returned chan struct{}
+}
+
+func (w *blockedACPWriter) Write([]byte) (int, error) {
+	close(w.entered)
+	<-w.closed
+	close(w.returned)
+	return 0, io.ErrClosedPipe
+}
+func (w *blockedACPWriter) Close() error { close(w.closed); return nil }
 
 func acpPipe(t *testing.T) (*acpClient, *json.Decoder, *json.Encoder, io.Closer) {
 	t.Helper()
@@ -135,6 +149,35 @@ func TestACPBlockedWriteCancellationClosesTransport(t *testing.T) {
 	<-c.done
 }
 
+func TestACPReverseReplyTimeoutRetiresConnection(t *testing.T) {
+	input := &blockedACPWriter{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	responseRead, responseWrite := io.Pipe()
+	c := &acpClient{role: acpPrimary, input: input, output: responseRead, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), replyWait: 20 * time.Millisecond}
+	c.writeGate <- struct{}{}
+	readDone := make(chan struct{})
+	go func() { c.read(responseRead); close(readDone) }()
+	t.Cleanup(func() { c.close(); _ = responseWrite.Close(); <-input.returned; <-readDone })
+	written := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":"blocked","method":"unknown"}`+"\n")
+		written <- err
+	}()
+	if err := <-written; err != nil {
+		t.Fatal(err)
+	}
+	<-input.entered
+	select {
+	case <-c.done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("blocked reverse reply did not retire the connection")
+	}
+	if !errors.Is(c.err, context.DeadlineExceeded) {
+		t.Fatalf("reverse reply error = %v", c.err)
+	}
+	<-input.returned
+	<-readDone
+}
+
 func TestACPCancelledRequestsRemainBounded(t *testing.T) {
 	c, d, e, _ := acpPipe(t)
 	var first acpFrame
@@ -196,9 +239,10 @@ func TestACPMalformedCancelledResponseRetiresConnection(t *testing.T) {
 // and neither the running turn nor the lane loses its connection.
 func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 	h := newContinuationHarness(t)
-	reverse := func(id int64, method string, params map[string]any, expected string) {
+	reverse := func(id json.RawMessage, method string, params map[string]any, expected string) {
 		t.Helper()
 		params["sessionId"] = testSessionID
+		h.primaryWrite.SetEscapeHTML(false)
 		must(t, h.primaryWrite.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
 		var reply json.RawMessage
 		must(t, h.primaryRead.Decode(&reply))
@@ -209,12 +253,11 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 		check(t, err == nil, "%s retired the connection: %v", method, err)
 	}
 	original := h.start(t, 2, "g/1", "owned-first")
-	reverse(41, "fs/read_text_file", map[string]any{"path": "/etc/hostname"}, `{"jsonrpc":"2.0","id":41,"error":{"code":-32601,"message":"Method not found"}}`)
+	reverse(json.RawMessage(`"unknown-\u0031"`), "fs/read_text_file", map[string]any{"path": "/etc/hostname"}, `{"jsonrpc":"2.0","id":"unknown-\u0031","error":{"code":-32601,"message":"Method not found"}}`)
+	reverse(json.RawMessage(`41`), "numeric/unknown", map[string]any{}, `{"jsonrpc":"2.0","id":41,"error":{"code":-32601,"message":"Method not found"}}`)
 	h.answer(t, "p-g/1", "first-answer")
-	// Native request IDs are their own space; this one equals the pending prompt's.
-	id := *original.ID
 	options := []map[string]string{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}}
-	reverse(id, "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"outcome":{"outcome":"cancelled"}}}`, id))
+	reverse(json.RawMessage(`"<permission&2>"`), "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, `{"jsonrpc":"2.0","id":"<permission&2>","result":{"outcome":{"outcome":"cancelled"}}}`)
 	h.terminal(t, "p-g/1", "end_turn")
 	replyACP(t, h.primaryWrite, original, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
 	readWorkerReadyID(t, h.bus, "g/1")
@@ -229,6 +272,45 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 	readWorkerReadyID(t, h.bus, "g/2")
 	s = h.status(t, 6, "g/2")
 	check(t, s.State == "done" && s.Result != nil && s.Result.Result == "next-answer" && s.Result.Outcome == "completed", "subsequent turn: %+v", s)
+}
+
+func TestACPIDAbsentAndNullStayDistinct(t *testing.T) {
+	requestRead, requestWrite := io.Pipe()
+	responseRead, responseWrite := io.Pipe()
+	notified := make(chan string, 1)
+	c := newACPClient(acpPrimary, requestWrite, responseRead, func(f acpFrame) { notified <- f.Method })
+	t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
+	e := json.NewEncoder(responseWrite)
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "method": "absent"}))
+	check(t, <-notified == "absent", "notification with absent ID was not delivered")
+	_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":null,"method":"unknown"}`+"\n")
+	must(t, err)
+	var reply json.RawMessage
+	must(t, json.NewDecoder(requestRead).Decode(&reply))
+	check(t, string(reply) == `{"jsonrpc":"2.0","id":null,"error":{"code":-32601,"message":"Method not found"}}`, "null ID reply: %s", reply)
+	must(t, e.Encode(map[string]any{"jsonrpc": "2.0", "method": "after-null"}))
+	check(t, <-notified == "after-null", "frame after null ID was not processed")
+}
+
+func TestACPInvalidRequestIDShapesReplyAndContinue(t *testing.T) {
+	for name, id := range map[string]string{
+		"object": `{}`, "array": `[]`, "boolean": `true`, "fraction": `1.5`, "out-of-range": `9223372036854775808`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			requestRead, requestWrite := io.Pipe()
+			responseRead, responseWrite := io.Pipe()
+			notified := make(chan string, 1)
+			c := newACPClient(acpPrimary, requestWrite, responseRead, func(f acpFrame) { notified <- f.Method })
+			t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
+			_, err := io.WriteString(responseWrite, `{"jsonrpc":"2.0","id":`+id+`,"method":"unknown"}`+"\n")
+			must(t, err)
+			var reply json.RawMessage
+			must(t, json.NewDecoder(requestRead).Decode(&reply))
+			check(t, string(reply) == `{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"Invalid Request"}}`, "%s ID reply: %s", name, reply)
+			must(t, json.NewEncoder(responseWrite).Encode(map[string]any{"jsonrpc": "2.0", "method": "after-invalid"}))
+			check(t, <-notified == "after-invalid", "%s ID retired the connection", name)
+		})
+	}
 }
 
 // Invalid framing and a failed reverse-request reply still retire the connection.
