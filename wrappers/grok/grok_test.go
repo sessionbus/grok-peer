@@ -42,12 +42,11 @@ func TestMain(m *testing.M) {
 	_ = os.Setenv("GROK_TEST_CHILD", "1")
 	// Lanes preflight the installed private alias beside the product binary.
 	bin, err := os.MkdirTemp("", "sessionbus-grok-test-bin-")
-	if err != nil {
-		panic(err)
-	}
-	self, err := os.Executable()
 	if err == nil {
-		err = os.Symlink(self, filepath.Join(bin, PrivateAlias))
+		err = installBinaryFixture(bin)
+	}
+	if err == nil {
+		err = os.Symlink(Product, filepath.Join(bin, PrivateAlias))
 	}
 	if err != nil {
 		panic(err)
@@ -467,6 +466,27 @@ func TestLaneArgumentValidationPrecedesConfigWrite(t *testing.T) {
 	}
 }
 
+func installBinaryFixture(dir string) error {
+	return os.WriteFile(filepath.Join(dir, Product), []byte("binary fixture"), 0700)
+}
+
+func TestSessionbusAliasFollowsPublicEntryToInstalledBinary(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	must(t, err)
+	public, installed := filepath.Join(root, "bin"), filepath.Join(root, "libexec")
+	must(t, os.MkdirAll(public, 0700))
+	must(t, os.MkdirAll(installed, 0700))
+	must(t, installBinaryFixture(installed))
+	must(t, os.Symlink(Product, filepath.Join(installed, PrivateAlias)))
+	must(t, os.Symlink(filepath.Join(installed, Product), filepath.Join(public, Product)))
+	previous := executable
+	executable = func() (string, error) { return filepath.Join(public, Product), nil }
+	t.Cleanup(func() { executable = previous })
+	alias, err := sessionbusAlias()
+	must(t, err)
+	check(t, alias == filepath.Join(installed, PrivateAlias), "alias = %q", alias)
+}
+
 func TestLaneIncompleteSessionbusAliasRefusesBeforeNativeStart(t *testing.T) {
 	for name, test := range map[string]struct {
 		prepare func(t *testing.T, alias string)
@@ -477,7 +497,10 @@ func TestLaneIncompleteSessionbusAliasRefusesBeforeNativeStart(t *testing.T) {
 		"not-executable": {func(t *testing.T, alias string) { must(t, os.WriteFile(alias, []byte("#!/bin/sh\n"), 0600)) }, "not a regular executable"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			home, recordPath, bin := t.TempDir(), filepath.Join(t.TempDir(), "record"), t.TempDir()
+			home, recordPath := t.TempDir(), filepath.Join(t.TempDir(), "record")
+			bin, err := filepath.EvalSymlinks(t.TempDir())
+			must(t, err)
+			must(t, installBinaryFixture(bin))
 			t.Setenv("GROK_HOME", home)
 			t.Setenv("GROK_TEST_RECORD", recordPath)
 			alias := filepath.Join(bin, PrivateAlias)
@@ -487,7 +510,7 @@ func TestLaneIncompleteSessionbusAliasRefusesBeforeNativeStart(t *testing.T) {
 			t.Cleanup(func() { executable = installed })
 			p := New(filepath.Join(testsocket.Directory(t), "sessionbus.sock"), "token")
 			p.SetCall(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil })
-			_, err := p.Open(context.Background(), sessionkit.OpenRequest{Name: "lane@local"})
+			_, err = p.Open(context.Background(), sessionkit.OpenRequest{Name: "lane@local"})
 			if err == nil || !strings.Contains(err.Error(), "Grok Sessionbus integration is incomplete: "+alias+" is missing or not executable: ") || !strings.Contains(err.Error(), test.cause) {
 				t.Fatalf("alias failure = %v", err)
 			}

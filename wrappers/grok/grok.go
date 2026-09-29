@@ -761,12 +761,15 @@ func startNative(cmd *exec.Cmd) (*nativeProcess, error) {
 	return process, nil
 }
 
-// sessionbusAlias resolves the private MCP alias beside the running executable.
-// Native Grok runs it as the lane's Sessionbus server, so it must stat as a
-// regular executable: a link to the product binary qualifies, a dangling one
-// does not.
+// sessionbusAlias resolves the private MCP alias beside the installed binary,
+// even when the public entry was invoked through a symlink. Native Grok runs
+// it as the lane's Sessionbus server, so it must stat as a regular executable:
+// a link to the product binary qualifies, a dangling one does not.
 func sessionbusAlias() (string, error) {
 	self, err := executable()
+	if err == nil {
+		self, err = filepath.EvalSymlinks(self)
+	}
 	if err != nil {
 		return "", fmt.Errorf("Grok Sessionbus integration is incomplete: %w", err)
 	}
