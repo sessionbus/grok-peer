@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 )
@@ -189,4 +190,83 @@ func TestACPMalformedCancelledResponseRetiresConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-c.done
+}
+
+// Native client requests are answered on the one ACP writer without approval,
+// and neither the running turn nor the lane loses its connection.
+func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
+	h := newContinuationHarness(t)
+	reverse := func(id int64, method string, params map[string]any, expected string) {
+		t.Helper()
+		params["sessionId"] = testSessionID
+		must(t, h.primaryWrite.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
+		var reply json.RawMessage
+		must(t, h.primaryRead.Decode(&reply))
+		check(t, string(reply) == expected, "reply to %s: %s", method, reply)
+		h.p.primary.mu.Lock()
+		err := h.p.primary.err
+		h.p.primary.mu.Unlock()
+		check(t, err == nil, "%s retired the connection: %v", method, err)
+	}
+	original := h.start(t, 2, "g/1", "owned-first")
+	reverse(41, "fs/read_text_file", map[string]any{"path": "/etc/hostname"}, `{"jsonrpc":"2.0","id":41,"error":{"code":-32601,"message":"Method not found"}}`)
+	h.answer(t, "p-g/1", "first-answer")
+	// Native request IDs are their own space; this one equals the pending prompt's.
+	id := *original.ID
+	options := []map[string]string{{"optionId": "allow", "name": "Allow", "kind": "allow_once"}, {"optionId": "reject", "name": "Reject", "kind": "reject_once"}}
+	reverse(id, "session/request_permission", map[string]any{"toolCall": map[string]string{"toolCallId": "call-1", "title": "shell", "kind": "execute"}, "options": options}, fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":{"outcome":{"outcome":"cancelled"}}}`, id))
+	h.terminal(t, "p-g/1", "end_turn")
+	replyACP(t, h.primaryWrite, original, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
+	readWorkerReadyID(t, h.bus, "g/1")
+	s := h.status(t, 3, "g/1")
+	check(t, s.State == "done" && s.Result != nil && s.Result.Result == "first-answer" && s.Result.Outcome == "completed", "turn with native requests: %+v", s)
+	writeWorkerRequest(t, h.bus, 4, "turn.ack", map[string]string{"session_id": testSessionID + "@local", "run_id": "g/1"})
+	check(t, readWorkerResponse(t, h.bus, 4).Error == nil, "ack failed")
+	next := h.start(t, 5, "g/2", "following-explicit")
+	h.answer(t, "p-g/2", "next-answer")
+	h.terminal(t, "p-g/2", "end_turn")
+	replyACP(t, h.primaryWrite, next, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/2"}})
+	readWorkerReadyID(t, h.bus, "g/2")
+	s = h.status(t, 6, "g/2")
+	check(t, s.State == "done" && s.Result != nil && s.Result.Result == "next-answer" && s.Result.Outcome == "completed", "subsequent turn: %+v", s)
+}
+
+// Invalid framing and a failed reverse-request reply still retire the connection.
+func TestACPMalformedFramesAndReplyWriteFailureRemainFatal(t *testing.T) {
+	for name, line := range map[string]string{
+		"request-with-result": `{"jsonrpc":"2.0","id":7,"method":"session/request_permission","result":{}}`,
+		"request-with-error":  `{"jsonrpc":"2.0","id":7,"method":"example","error":{"code":1,"message":"refused"}}`,
+		"version":             `{"jsonrpc":"1.0","id":7,"method":"session/request_permission"}`,
+		"framing":             `{"jsonrpc":"2.0","id":7,"method":`,
+		"reply-write":         `{"jsonrpc":"2.0","id":7,"method":"session/request_permission"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			requestRead, requestWrite := io.Pipe()
+			responseRead, responseWrite := io.Pipe()
+			c := newACPClient(requestWrite, responseRead, nil)
+			t.Cleanup(func() { c.close(); _ = requestRead.Close(); _ = responseWrite.Close() })
+			if name == "reply-write" {
+				_ = requestRead.Close()
+			}
+			if _, err := io.WriteString(responseWrite, line+"\n"); err != nil {
+				t.Fatal(err)
+			}
+			<-c.done
+			c.mu.Lock()
+			err := c.err
+			c.mu.Unlock()
+			if name == "reply-write" {
+				if !errors.Is(err, io.ErrClosedPipe) {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("malformed frame kept the connection")
+			}
+			if _, err = requestRead.Read(make([]byte, 1)); err != io.EOF {
+				t.Fatalf("malformed frame was answered: %v", err)
+			}
+		})
+	}
 }

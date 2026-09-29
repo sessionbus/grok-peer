@@ -70,12 +70,23 @@ func (c *acpClient) read(output io.ReadCloser) {
 			c.finish(errors.New("malformed Grok ACP frame"))
 			return
 		}
-		if frame.ID != nil {
-			// The product must not mistake a client-side unsupported exchange for approval.
-			if frame.Method != "" {
-				c.finish(fmt.Errorf("unsupported Grok ACP client request: %s", frame.Method))
+		if frame.ID != nil && frame.Method != "" {
+			if frame.Error != nil || len(frame.Result) != 0 {
+				c.finish(errors.New("invalid Grok ACP request envelope"))
 				return
 			}
+			// The product must not mistake a client-side exchange for approval:
+			// permission is answered cancelled and any other method is not found.
+			// Both are non-approval results and keep the connection for the turn.
+			reply := acpFrame{JSONRPC: "2.0", ID: frame.ID, Error: &acpError{Code: -32601, Message: "Method not found"}}
+			if frame.Method == "session/request_permission" {
+				reply.Result, reply.Error = json.RawMessage(`{"outcome":{"outcome":"cancelled"}}`), nil
+			}
+			if err := c.sendContext(context.Background(), reply); err != nil {
+				c.finish(err)
+				return
+			}
+		} else if frame.ID != nil {
 			if (frame.Error == nil) == (len(frame.Result) == 0) {
 				c.finish(errors.New("invalid Grok ACP response envelope"))
 				return
