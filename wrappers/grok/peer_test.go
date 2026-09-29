@@ -589,6 +589,10 @@ func TestPeerShutdownKillsItsObserverProcessGroup(t *testing.T) {
 	receipt, err := backend.deliver(context.Background(), sessionkit.PeerIdentity{SessionID: testSessionID}, delivery("peer message"))
 	must(t, err)
 	check(t, receipt.Disposition == "injected", "delivery = %#v", receipt)
+	backend.mu.Lock()
+	role := backend.observer.role
+	backend.mu.Unlock()
+	check(t, role == acpObserver, "interactive observer may answer shared native interactions")
 	body, err := os.ReadFile(filepath.Join(root, "descendant.pid"))
 	must(t, err)
 	var pid int

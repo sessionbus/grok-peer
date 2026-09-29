@@ -41,7 +41,19 @@ type acpReply struct {
 	body json.RawMessage
 	err  error
 }
+
+// acpRole is fixed at construction. Grok broadcasts shared interactions such
+// as permission to every subscribed client and takes the first answer, so only
+// the prompt-owning primary answers native client requests.
+type acpRole int
+
+const (
+	acpObserver acpRole = iota
+	acpPrimary
+)
+
 type acpClient struct {
+	role       acpRole
 	input      io.WriteCloser
 	output     io.ReadCloser
 	mu         sync.Mutex
@@ -54,8 +66,8 @@ type acpClient struct {
 	notify     func(acpFrame)
 }
 
-func newACPClient(input io.WriteCloser, output io.ReadCloser, notify func(acpFrame)) *acpClient {
-	c := &acpClient{input: input, output: output, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), notify: notify}
+func newACPClient(role acpRole, input io.WriteCloser, output io.ReadCloser, notify func(acpFrame)) *acpClient {
+	c := &acpClient{role: role, input: input, output: output, writeGate: make(chan struct{}, 1), pending: map[int64]chan acpReply{}, admissions: map[interjectionNotice]chan error{}, done: make(chan struct{}), notify: notify}
 	c.writeGate <- struct{}{}
 	go c.read(output)
 	return c
@@ -70,12 +82,26 @@ func (c *acpClient) read(output io.ReadCloser) {
 			c.finish(errors.New("malformed Grok ACP frame"))
 			return
 		}
-		if frame.ID != nil {
-			// The product must not mistake a client-side unsupported exchange for approval.
-			if frame.Method != "" {
-				c.finish(fmt.Errorf("unsupported Grok ACP client request: %s", frame.Method))
+		if frame.ID != nil && frame.Method != "" {
+			if frame.Error != nil || len(frame.Result) != 0 {
+				c.finish(errors.New("invalid Grok ACP request envelope"))
 				return
 			}
+			// The product must not mistake a client-side exchange for approval:
+			// the primary answers permission cancelled and any other method not
+			// found. Both are non-approval results and keep the connection for the
+			// turn. An observer leaves the request to the prompt owner unanswered.
+			if c.role == acpPrimary {
+				reply := acpFrame{JSONRPC: "2.0", ID: frame.ID, Error: &acpError{Code: -32601, Message: "Method not found"}}
+				if frame.Method == "session/request_permission" {
+					reply.Result, reply.Error = json.RawMessage(`{"outcome":{"outcome":"cancelled"}}`), nil
+				}
+				if err := c.sendContext(context.Background(), reply); err != nil {
+					c.finish(err)
+					return
+				}
+			}
+		} else if frame.ID != nil {
 			if (frame.Error == nil) == (len(frame.Result) == 0) {
 				c.finish(errors.New("invalid Grok ACP response envelope"))
 				return

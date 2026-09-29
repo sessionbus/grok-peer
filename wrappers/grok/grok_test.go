@@ -304,6 +304,7 @@ func TestFreshLaneNativeLifecycle(t *testing.T) {
 	must(t, err)
 	defer p.Close(context.Background(), sessionkit.SessionCloseRequest{})
 	check(t, opened.SessionID == testSessionID, "session id = %q", opened.SessionID)
+	check(t, p.primary.role == acpPrimary && p.observer.role == acpObserver, "only the lane primary may answer native client requests")
 	check(t, !exists(filepath.Join(root, "locks")), "adapter session lock recreated")
 	frames := records(t, recordPath)
 	check(t, containsStart(frames, "--permission-mode", "bypassPermissions", "--reasoning-effort", "low", "-m", "grok-4.6", "--disable-web-search"), "typed argv not preserved")

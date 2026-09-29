@@ -160,7 +160,7 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	if err != nil {
 		return sessionkit.OpenResult{}, fail(fmt.Errorf("start Grok primary: %w", err))
 	}
-	primary := newACPClient(input, output, p.receive)
+	primary := newACPClient(acpPrimary, input, output, p.receive)
 	p.mu.Lock()
 	p.primary, p.child, p.leader = primary, child, leader
 	p.mu.Unlock()
@@ -313,7 +313,7 @@ func startObserverClient(lifetimeCtx, requestCtx context.Context, cmd *exec.Cmd,
 	if err != nil {
 		return nil, nil, err
 	}
-	client := newACPClient(input, output, notify)
+	client := newACPClient(acpObserver, input, output, notify)
 	go func() {
 		select {
 		case <-lifetimeCtx.Done():

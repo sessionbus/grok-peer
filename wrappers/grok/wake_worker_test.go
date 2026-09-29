@@ -60,7 +60,7 @@ func TestGrokWorkerSeedAdmissionReceiptAndCursor(t *testing.T) {
 			defer requestRead.Close()
 			defer responseWrite.Close()
 			base := &Wrapper{sessionID: "native-session"}
-			base.primary = newACPClient(requestWrite, responseRead, base.receive)
+			base.primary = newACPClient(acpPrimary, requestWrite, responseRead, base.receive)
 			defer base.primary.close()
 			p := &grokSeedProduct{Wrapper: base, returned: make(chan error, 1)}
 			if mode == "terminal-before-receipt" || mode == "bus-loss-at-receipt" {
