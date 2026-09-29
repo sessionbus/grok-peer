@@ -4,6 +4,7 @@ package grok
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,12 +20,33 @@ var errACPCapacity = errors.New("Grok ACP request capacity exhausted")
 
 type acpFrame struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *acpError       `json:"error,omitempty"`
 }
+
+func validACPID(raw json.RawMessage) bool {
+	if raw == nil || bytes.Equal(raw, []byte("null")) {
+		return true
+	}
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return true
+	}
+	_, ok := numericACPID(raw)
+	return ok
+}
+
+func numericACPID(raw json.RawMessage) (int64, bool) {
+	if raw == nil || bytes.Equal(raw, []byte("null")) {
+		return 0, false
+	}
+	var id int64
+	return id, json.Unmarshal(raw, &id) == nil
+}
+
 type acpError struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
@@ -78,7 +100,7 @@ func (c *acpClient) read(output io.ReadCloser) {
 	scanner.Buffer(make([]byte, 4096), maxACPFrame)
 	for scanner.Scan() {
 		var frame acpFrame
-		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.JSONRPC != "2.0" {
+		if json.Unmarshal(scanner.Bytes(), &frame) != nil || frame.JSONRPC != "2.0" || !validACPID(frame.ID) {
 			c.finish(errors.New("malformed Grok ACP frame"))
 			return
 		}
@@ -106,10 +128,15 @@ func (c *acpClient) read(output io.ReadCloser) {
 				c.finish(errors.New("invalid Grok ACP response envelope"))
 				return
 			}
+			id, ok := numericACPID(frame.ID)
+			if !ok {
+				c.finish(errors.New("invalid Grok ACP response ID"))
+				return
+			}
 			c.mu.Lock()
-			reply, known := c.pending[*frame.ID]
+			reply, known := c.pending[id]
 			if known {
-				delete(c.pending, *frame.ID)
+				delete(c.pending, id)
 			}
 			if reply != nil {
 				var err error
