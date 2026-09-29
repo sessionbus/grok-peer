@@ -12,14 +12,12 @@ Install native Grok and Sessionbus first using your normal home, login and PATH.
 curl -fsSL https://raw.githubusercontent.com/sessionbus/grok-peer/main/scripts/install-grok.sh | sh
 ```
 
-This repository is being separated from the original peers tree. No independent
-release is published yet; use a reviewed archive built from source until release.
-The installer retains checksum verification, archive-role checks and latest
-stable/development selection against this repository; until a release exists it
-stops without installing and never fetches another product. Older published
-installer links remain compatibility entrypoints in
-[the original repository](https://github.com/sessionbus/codex-peer), pinned to the
-final combined v0.5.3 assets.
+Stable releases are published from signed `vX.Y.Z` tags; see
+[docs/releases](docs/releases). The installer installs the latest stable release
+by default (set `SESSIONBUS_VERSION` to pin one), verifies checksums and the
+archive role, and does not fetch another product. v0.5.9 and later require
+Sessionbus v0.5.9. Installers from the earlier combined peers repository are not
+used for these releases.
 
 See [the Grok guide](grok/README.md) for install/update instructions, the private
 `grok-peer-mcp` alias, native flags, the managed permission rule, resume, identity
@@ -52,9 +50,9 @@ scripts/package-product grok ./dist
 ```
 
 Builds require Go 1.24 or newer; target installations do not need Go. Packaging
-supports Linux/macOS amd64/arm64. This extraction does not bump RELEASE_VERSION
-or the Grok native plugin manifest.
-Release publication remains held pending behavioral acceptance and an owner release decision.
+supports Linux/macOS amd64/arm64. RELEASE_VERSION agrees with the stable tag; the
+Grok native plugin manifest keeps its independent `0.5.0` identity. Stable releases
+are published from signed `vX.Y.Z` tags; see [docs/releases](docs/releases).
 
 Shared support uses the exact peer-common version/checksum in go.mod/go.sum.
 Native Grok versions are not pinned: users routinely update native clients.
@@ -68,9 +66,14 @@ Held lane skills stay documentation only and are not packaged or activated.
 Independent extraction review is complete, and source `abe912d` was installed
 twice on the permanent development host with byte-equal post-install
 observations (binary SHA-256 `0564ac7a7c8cc8a963b405c5f690b29add8b239da40a5d8b66919af5f4ab90dd`).
-Behavioral acceptance remains pending owner Grok authentication: no fresh
-authenticated model turn on the split build has been observed. Historical
-pre-split results are not rebound to it.
+Authenticated field-free validation ran on the permanent development host
+(Sessionbus daemon build c9792c31, the v0.5.9 runtime) with grok-peer builds
+90784abb and f098af40; f098af40 has the same runtime as this release.
+Interactive, managed-lane, persistent-lane, owner-exit, permission and lifecycle
+scenarios passed, except the private-leader respawn residue described under
+[Private leader loss](grok/README.md) and in the v0.5.9 release notes. This is
+scoped evidence, not blanket acceptance, and historical pre-split results are
+not rebound to it.
 
 ## Version reporting
 
