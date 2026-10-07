@@ -96,6 +96,10 @@ func runMCP(ctx context.Context) error {
 		return grok.ForwardLane(ctx, path, os.Stdin, os.Stdout)
 	}
 
+	// The helper's Sessionbus presence ends with its launch, even when a native
+	// replacement leader keeps the helper process running.
+	ctx, stop := grok.WithManagedLaunch(ctx, os.Environ())
+	defer stop()
 	backend, err := grok.NewPeerBackend(ctx, os.Environ())
 	if err != nil {
 		return err
