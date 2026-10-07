@@ -397,6 +397,7 @@ func TestPeerDeliveryOwnerSerializesTwoReceipts(t *testing.T) {
 		check(t, result.receipt.Disposition == "injected", "delivery receipt = %#v", result.receipt)
 	}
 	check(t, len(peerClientPIDs(t, records(t, recordPath))) == 1, "serialized deliveries opened more than one observer")
+	check(t, countStartsContaining(records(t, recordPath), "--no-auto-update") == 0, "the peer observer suppressed native auto-update")
 	check(t, countFrames(records(t, recordPath), "_x.ai/interject") == 2, "serialized deliveries lost an interject")
 	backend.Shutdown()
 }
