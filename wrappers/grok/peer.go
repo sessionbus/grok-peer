@@ -102,17 +102,32 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 		stopPeerClient(hold, holdProcess)
 		return errors.Join(childErr, closeNative("leader", leader))
 	}
-	select {
-	case childErr := <-childDone:
-		return finish(childErr)
-	case <-ctx.Done():
-		return finish(finishInteractiveChild(child, childDone, interactiveSignal(ctx)))
-	case <-hold.done:
-		childErr := finishInteractiveChild(child, childDone, syscall.SIGTERM)
-		return finish(errors.Join(fmt.Errorf("Grok startup hold closed: %w", hold.err), childErr))
-	case <-leader.done:
-		childErr := finishInteractiveChild(child, childDone, syscall.SIGTERM)
-		return finish(errors.Join(errors.New("Grok leader exited"), leader.Wait(), childErr))
+	// A leader exit (for example a native update) or a lost startup hold no
+	// longer ends the session: the TUI owns its native reconnect, and the hold is
+	// startup presence only (Sessionbus delivery uses a separate observer). Each
+	// loss is reported after the TUI exits, never on the terminal it owns, and the
+	// TUI's own result is returned.
+	var notices []string
+	report := func(result error) error {
+		for _, notice := range notices {
+			fmt.Fprintln(os.Stderr, notice)
+		}
+		return result
+	}
+	holdDone, leaderDone := hold.done, leader.done
+	for {
+		select {
+		case childErr := <-childDone:
+			return report(finish(childErr))
+		case <-ctx.Done():
+			return report(finish(finishInteractiveChild(child, childDone, interactiveSignal(ctx))))
+		case <-holdDone:
+			holdDone = nil
+			notices = append(notices, fmt.Sprintf("sessionbus: Grok startup hold closed during the session: %v; it was startup presence only, Sessionbus delivery uses a separate observer", hold.err))
+		case <-leaderDone:
+			leaderDone = nil
+			notices = append(notices, fmt.Sprintf("sessionbus: Grok leader exited during the session: %v; the TUI was left to its native reconnect", leader.Wait()))
+		}
 	}
 }
 

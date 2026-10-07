@@ -121,20 +121,31 @@ their launch connection.
 
 ## Private leader loss (known native limitation)
 
-If the private leader exits while native clients are still attached (the TUI or
-a lane's `agent --leader stdio` bridge), Grok's reconnect path can start a
-detached `grok agent leader --no-exit-on-disconnect --relay-on-demand` on the
-same private socket. This was observed on Grok 1.0.44 after TERM to the
-leader. The replacement runs in its own process group under PID 1 and
-survives the launcher's teardown, which covers only the processes the launcher
-started. Native Grok has no connect-only client option, and the wrapper does
-not search for or stop the replacement. Stop a leftover one by its exact PID
-after confirming its command line.
+The private leader can exit while the TUI or a lane's `agent --leader stdio`
+bridge is attached: after a native update (the wrapper does not suppress
+updates), when a newer native client takes it over (per Grok 1.0.35 source), or
+when it is killed. The wrapper does not end the session for that. The TUI is
+left to Grok's own reconnect, and a lane's bridge to its bounded native
+reconnect. Losing the startup hold after the TUI has started does not end the
+session either: the hold only provides client presence during startup, and
+Sessionbus delivery uses a separate observer. Each such loss is reported on
+stderr after the TUI exits, and the launcher exits with the TUI's own status.
+Whether the session and its delivery continue correctly after a reconnect
+depends on the native release.
+
+Grok's reconnect path can start a detached `grok agent leader
+--no-exit-on-disconnect --relay-on-demand` on the same private socket. This was
+observed on Grok 1.0.44 after TERM to the leader. The replacement runs in its
+own process group under PID 1 and survives the launcher's teardown, which covers
+only the processes the launcher started. Native Grok has no connect-only client
+option and gives clients no request to stop a leader, and removing the private
+launch directory does not stop one. The wrapper does not search for or stop the
+replacement. Stop a leftover one by its exact PID after confirming its command
+line.
 
 The replacement starts without the wrapper's leader arguments. Per Grok 1.0.35
-source (not observed in use), it therefore runs native hourly auto-update, and
-its session-default permission mode comes from `config.toml` instead of the
-lane's `permission_mode`. TUI sessions and resumed lanes re-send their mode
-when they reconnect. A fresh lane replayed by the stdio bridge takes the
-config default instead. Permission rules, including the Sessionbus grant,
-come from the same config files in either case.
+source (not observed in use), its session-default permission mode therefore
+comes from `config.toml` instead of the lane's `permission_mode`. TUI sessions
+and resumed lanes re-send their mode when they reconnect. A fresh lane replayed
+by the stdio bridge takes the config default instead. Permission rules,
+including the Sessionbus grant, come from the same config files in either case.

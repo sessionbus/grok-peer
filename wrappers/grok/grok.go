@@ -268,8 +268,7 @@ func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy,
 	}
 	_ = os.Remove(path)
 	arguments := slices.Clone(policy)
-	// An auto-updating native leader exits once a newer binary is on disk; the interactive wrapper then ends the TUI session and a lane may continue on a detached replacement leader (README: private leader loss).
-	arguments = append(arguments, "agent", "leader", "--leader-socket", path, "--relay-on-demand", "--no-auto-update")
+	arguments = append(arguments, "agent", "leader", "--leader-socket", path, "--relay-on-demand")
 	cmd := command("grok", arguments...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = cwd, environment, os.Stderr, os.Stderr
 	process, err := startNative(cmd)
@@ -718,19 +717,36 @@ func (p *Wrapper) watch(child *nativeProcess) {
 	}
 }
 
+// killProcess is stopAux's raw signal; a test seam only.
+var killProcess = syscall.Kill
+
 func stopAux(process *nativeProcess) {
-	if process == nil {
+	if process == nil || reaped(process) {
 		return
 	}
 	pid := process.cmd.Process.Pid
 	if process.cmd.SysProcAttr != nil && process.cmd.SysProcAttr.Setpgid {
 		pid = -pid
 	}
-	_ = syscall.Kill(pid, syscall.SIGKILL)
+	_ = killProcess(pid, syscall.SIGKILL)
 	<-process.done
 }
 
+// reaped reports a process already waited for. Its PID or process-group number
+// may have been reused, so teardown must not signal it.
+func reaped(process *nativeProcess) bool {
+	select {
+	case <-process.done:
+		return true
+	default:
+		return false
+	}
+}
+
 func stopNative(process *nativeProcess) error {
+	if reaped(process) {
+		return nil
+	}
 	if err := process.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
