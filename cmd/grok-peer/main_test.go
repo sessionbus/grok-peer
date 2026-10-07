@@ -20,6 +20,7 @@ import (
 	"github.com/sessionbus/grok-peer/wrappers/grok"
 	"github.com/sessionbus/peer-common/host"
 	"github.com/sessionbus/peer-common/mcp"
+	"github.com/sessionbus/peer-common/testsocket"
 )
 
 func TestLaneModeRejectsArguments(t *testing.T) {
@@ -153,7 +154,12 @@ func TestManagedEntryEndsWithItsLaunchDirectoryNotItsSocket(t *testing.T) {
 }
 
 func TestManagedEntryStartedAfterItsLaunchIsInert(t *testing.T) {
-	bus := filepath.Join(t.TempDir(), "bus")
+	// A short socket directory: a t.TempDir path exceeds the Unix socket path limit on macOS.
+	bus := filepath.Join(testsocket.Directory(t), "bus")
+	if len(bus) >= 100 {
+		t.Fatalf("bus socket path is %d bytes, too long for a Unix socket", len(bus))
+	}
+	t.Logf("bus socket path is %d bytes", len(bus))
 	listener, err := net.Listen("unix", bus)
 	if err != nil {
 		t.Fatal(err)
