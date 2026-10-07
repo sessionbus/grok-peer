@@ -268,6 +268,7 @@ func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy,
 	}
 	_ = os.Remove(path)
 	arguments := slices.Clone(policy)
+	// An auto-updating native leader exits once a newer binary is on disk; the interactive wrapper then ends the TUI session and a lane may continue on a detached replacement leader (README: private leader loss).
 	arguments = append(arguments, "agent", "leader", "--leader-socket", path, "--relay-on-demand", "--no-auto-update")
 	cmd := command("grok", arguments...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = cwd, environment, os.Stderr, os.Stderr
@@ -299,7 +300,7 @@ func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy,
 }
 
 func (p *Wrapper) startObserverClient(ctx context.Context, cwd string, notify ...func(acpFrame)) (*acpClient, *nativeProcess, error) {
-	args := []string{"--no-auto-update", "--leader-socket", leaderSocket(p.socket, p.key), "agent", "--leader", "stdio"}
+	args := []string{"--leader-socket", leaderSocket(p.socket, p.key), "agent", "--leader", "stdio"}
 	cmd := command("grok", args...)
 	cmd.Dir, cmd.Env, cmd.Stderr = cwd, nativeEnvironment(), os.Stderr
 	var callback func(acpFrame)
@@ -802,7 +803,7 @@ func launchArguments(request sessionkit.OpenRequest, leader string) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	arguments := []string{"--no-auto-update"}
+	var arguments []string
 	if request.Open.PermissionMode != "" {
 		arguments = append(arguments, "--permission-mode", request.Open.PermissionMode)
 	}

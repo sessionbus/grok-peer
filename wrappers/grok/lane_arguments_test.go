@@ -27,7 +27,6 @@ func TestLaneTypedModelFollowsNativeAgentSubcommand(t *testing.T) {
 	got, err := launchArguments(request, "/tmp/sessionbus-grok-leader.sock")
 	must(t, err)
 	want := []string{
-		"--no-auto-update",
 		"--permission-mode", "bypassPermissions",
 		"--reasoning-effort", "low",
 		"--agent", "architect", "--disable-web-search", "--no-plan", "--no-subagents",
@@ -43,9 +42,9 @@ func TestLaneArgumentsWithoutTypedModelKeepPlacement(t *testing.T) {
 		open sessionkit.OpenOptions
 		want []string
 	}{
-		{"empty", sessionkit.OpenOptions{}, []string{"--no-auto-update", "--leader-socket", "/tmp/leader.sock", "agent", "--leader", "stdio"}},
+		{"empty", sessionkit.OpenOptions{}, []string{"--leader-socket", "/tmp/leader.sock", "agent", "--leader", "stdio"}},
 		{"typed and extras", sessionkit.OpenOptions{PermissionMode: "default", ReasoningEffort: "high", Arguments: []string{"--disable-web-search"}},
-			[]string{"--no-auto-update", "--permission-mode", "default", "--reasoning-effort", "high", "--disable-web-search", "--leader-socket", "/tmp/leader.sock", "agent", "--leader", "stdio"}},
+			[]string{"--permission-mode", "default", "--reasoning-effort", "high", "--disable-web-search", "--leader-socket", "/tmp/leader.sock", "agent", "--leader", "stdio"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := launchArguments(sessionkit.OpenRequest{Open: test.open}, "/tmp/leader.sock")

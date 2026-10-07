@@ -36,7 +36,7 @@ const grokSessionIDEnv = "GROK_SESSION_ID"
 const grokLeaderSocketEnv = "GROK_LEADER_SOCKET"
 
 func startPeerClient(lifetimeCtx, requestCtx context.Context, leaderPath, cwd string, notify func(acpFrame)) (*acpClient, *nativeProcess, error) {
-	cmd := command("grok", "--no-auto-update", "--leader-socket", leaderPath, "agent", "--leader", "stdio")
+	cmd := command("grok", "--leader-socket", leaderPath, "agent", "--leader", "stdio")
 	cmd.Dir, cmd.Env, cmd.Stderr, cmd.SysProcAttr = cwd, nativeEnvironment(), os.Stderr, &syscall.SysProcAttr{Setpgid: true}
 	return startObserverClient(lifetimeCtx, requestCtx, cmd, notify)
 }
