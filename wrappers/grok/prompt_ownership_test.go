@@ -98,7 +98,8 @@ func TestPendingOwnerDeliveryCancellationWaitsForNativeAdmission(t *testing.T) {
 	defer cancel()
 	observed := deliveryGateObservedContext{Context: ctx, entered: make(chan struct{}, 1)}
 	returned := make(chan error, 1)
-	go func() { _, err := h.p.Deliver(observed, delivery("unsent"), nil); returned <- err }()
+	run := h.currentRun()
+	go func() { _, err := h.p.Deliver(observed, delivery("unsent"), run); returned <- err }()
 	awaitInterrupt(t, observed.entered, "delivery gate entered before native admission")
 	cancel()
 	select {
@@ -150,8 +151,9 @@ func TestPendingOwnerWaitsForPrimaryAdmissionOrLoss(t *testing.T) {
 			prompt, native := beginHeldPrompt(t, h, w)
 			ctx := &ownershipAdmissionContext{Context: context.Background(), waiting: make(chan struct{})}
 			returned := make(chan continuationDeliveryResult, 1)
+			run := h.currentRun()
 			go func() {
-				r, e := h.p.Deliver(ctx, delivery("after-admission"), nil)
+				r, e := h.p.Deliver(ctx, delivery("after-admission"), run)
 				returned <- continuationDeliveryResult{r, e}
 			}()
 			select {

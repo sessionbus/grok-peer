@@ -614,7 +614,7 @@ func (p *Wrapper) Interrupt(ctx context.Context, run *sessionkit.Run) error {
 	}
 	return nil
 }
-func (p *Wrapper) Deliver(ctx context.Context, request sessionkit.DeliveryRequest, _ *sessionkit.Run) (sessionkit.DeliveryReceipt, error) {
+func (p *Wrapper) Deliver(ctx context.Context, request sessionkit.DeliveryRequest, run *sessionkit.Run) (sessionkit.DeliveryReceipt, error) {
 	message, err := host.RenderNativeMessage(request)
 	if err != nil {
 		return sessionkit.DeliveryReceipt{}, err
@@ -625,12 +625,14 @@ func (p *Wrapper) Deliver(ctx context.Context, request sessionkit.DeliveryReques
 		p.mu.Unlock()
 		return sessionkit.DeliveryReceipt{Disposition: "rejected", Reason: "lane_unavailable"}, nil
 	}
-	if p.run == nil {
+	if p.run == nil || p.run != run {
+		// The SDK captured this callback for another Run, which has since ended:
+		// nothing reached native, and the lane's current Run is not touched.
 		p.mu.Unlock()
 		return sessionkit.DeliveryReceipt{}, host.NotRunning()
 	}
 	p.mu.Unlock()
-	return p.deliverActive(ctx, request, message)
+	return p.deliverActive(ctx, request, message, run)
 }
 
 func (p *Wrapper) Close(ctx context.Context, _ sessionkit.SessionCloseRequest) error {
