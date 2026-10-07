@@ -601,6 +601,28 @@ func TestInteractiveLeaderExitKeepsTUI(t *testing.T) {
 	check(t, strings.Contains(stderr(), "sessionbus: Grok leader exited during the session"), "leader-exit notice missing")
 }
 
+func TestOrdinaryTUIExitIsNotHoldLoss(t *testing.T) {
+	// The TUI exits at once; its own teardown cancels the startup hold. The gap makes the
+	// TUI result and the hold closure ready together before the loop's first select.
+	previous := interactiveSelectGap
+	interactiveSelectGap = func() { time.Sleep(300 * time.Millisecond) }
+	t.Cleanup(func() { interactiveSelectGap = previous })
+	for iteration := range 20 {
+		root := testsocket.Directory(t)
+		t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+		t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+		t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", "")
+		stderr := captureStderr(t)
+		plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+		must(t, err)
+		err = RunInteractive(context.Background(), plan)
+		notice := stderr()
+		var exited *exec.ExitError
+		check(t, errors.As(err, &exited) && exited.ExitCode() == 7, "iteration %d: launcher result = %v", iteration, err)
+		check(t, !strings.Contains(notice, "startup hold closed during the session") && !strings.Contains(notice, "leader exited during the session"), "iteration %d: ordinary TUI exit reported as a loss: %q", iteration, notice)
+	}
+}
+
 func TestStopAuxSkipsReapedProcessGroup(t *testing.T) {
 	var killed []int
 	previous := killProcess

@@ -115,6 +115,7 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 		return result
 	}
 	holdDone, leaderDone := hold.done, leader.done
+	interactiveSelectGap()
 	for {
 		select {
 		case childErr := <-childDone:
@@ -122,14 +123,28 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 		case <-ctx.Done():
 			return report(finish(finishInteractiveChild(child, childDone, interactiveSignal(ctx))))
 		case <-holdDone:
+			// The TUI's own exit cancels the hold; that closure is teardown, not a loss.
+			select {
+			case childErr := <-childDone:
+				return report(finish(childErr))
+			default:
+			}
 			holdDone = nil
 			notices = append(notices, fmt.Sprintf("sessionbus: Grok startup hold closed during the session: %v; it was startup presence only, Sessionbus delivery uses a separate observer", hold.err))
 		case <-leaderDone:
+			select {
+			case childErr := <-childDone:
+				return report(finish(childErr))
+			default:
+			}
 			leaderDone = nil
 			notices = append(notices, fmt.Sprintf("sessionbus: Grok leader exited during the session: %v; the TUI was left to its native reconnect", leader.Wait()))
 		}
 	}
 }
+
+// interactiveSelectGap runs once before RunInteractive's loss loop; a test seam only.
+var interactiveSelectGap = func() {}
 
 func peerNativeEnvironment(environment []string) []string {
 	result := nativeEnvironmentFrom(environment)
