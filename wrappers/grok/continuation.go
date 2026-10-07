@@ -177,7 +177,7 @@ func (t *nativePrompt) waitOwned(ctx context.Context) (kit.TurnResult, error) {
 		p.mu.Lock()
 	}
 }
-func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text string) (kit.DeliveryReceipt, error) {
+func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text string, run *kit.Run) (kit.DeliveryReceipt, error) {
 	p.mu.Lock()
 	if p.deliveryGate == nil {
 		p.deliveryGate = make(chan struct{}, 1)
@@ -192,7 +192,7 @@ func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text
 	}
 	p.mu.Lock()
 	t, observer := p.pendingPrompt, p.observer
-	if p.closing || p.nativeFailure != nil || t == nil || observer == nil || t.retiring {
+	if p.closing || p.nativeFailure != nil || p.run != run || t == nil || observer == nil || t.retiring {
 		p.mu.Unlock()
 		gate <- struct{}{}
 		return kit.DeliveryReceipt{}, host.NotRunning()
@@ -208,7 +208,7 @@ func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text
 		return kit.DeliveryReceipt{}, host.NotRunning()
 	}
 	p.mu.Lock()
-	if p.pendingPrompt != t || p.closing || p.nativeFailure != nil || t.retiring || len(t.segments) == 0 || t.segments[len(t.segments)-1].terminal {
+	if p.pendingPrompt != t || p.run != run || p.closing || p.nativeFailure != nil || t.retiring || len(t.segments) == 0 || t.segments[len(t.segments)-1].terminal {
 		p.mu.Unlock()
 		gate <- struct{}{}
 		return kit.DeliveryReceipt{}, host.NotRunning()

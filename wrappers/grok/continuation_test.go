@@ -72,6 +72,13 @@ func newContinuationHarness(t *testing.T, configure ...func(*grokSeedProduct)) *
 	})
 	return &continuationHarness{p, reader, json.NewDecoder(rr), observerRead, json.NewEncoder(sw), json.NewEncoder(osw)}
 }
+
+// currentRun is the Run the SDK would capture for a delivery dispatched now.
+func (h *continuationHarness) currentRun() *kit.Run {
+	h.p.mu.Lock()
+	defer h.p.mu.Unlock()
+	return h.p.run
+}
 func (h *continuationHarness) notify(t *testing.T, method string, params map[string]any) {
 	t.Helper()
 	params["sessionId"] = testSessionID
@@ -198,8 +205,9 @@ func TestInterjectCancellationPreservesAttemptedNativeAccounting(t *testing.T) {
 			if !submitted {
 				cancel()
 			}
+			run := h.currentRun()
 			go func() {
-				r, e := h.p.Deliver(ctx, delivery("cancel-marker"), nil)
+				r, e := h.p.Deliver(ctx, delivery("cancel-marker"), run)
 				returned <- continuationDeliveryResult{r, e}
 			}()
 			var interject acpFrame
@@ -276,7 +284,8 @@ func TestWaitingInterjectCannotWakeRetiredRun(t *testing.T) {
 	}
 	returned := make(chan deliveryResult, 1)
 	ctx := deliveryGateObservedContext{Context: context.Background(), entered: make(chan struct{}, 1)}
-	go func() { r, err := h.p.Deliver(ctx, delivery("not-submitted"), nil); returned <- deliveryResult{r, err} }()
+	run := h.currentRun()
+	go func() { r, err := h.p.Deliver(ctx, delivery("not-submitted"), run); returned <- deliveryResult{r, err} }()
 	select {
 	case <-ctx.entered:
 	case result := <-returned:
@@ -343,7 +352,8 @@ func TestObserverWriteGateCannotSubmitAfterNativeTerminal(t *testing.T) {
 	original := h.start(t, 2, "g/1", "owned-first")
 	<-h.p.observer.writeGate
 	returned := make(chan error, 1)
-	go func() { _, e := h.p.Deliver(context.Background(), delivery("never-attempted"), nil); returned <- e }()
+	run := h.currentRun()
+	go func() { _, e := h.p.Deliver(context.Background(), delivery("never-attempted"), run); returned <- e }()
 	h.p.mu.Lock()
 	for h.p.pendingPrompt.delivery == nil {
 		changed := h.p.pendingPrompt.changed
