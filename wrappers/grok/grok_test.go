@@ -324,7 +324,7 @@ func TestFreshLaneNativeLifecycle(t *testing.T) {
 	check(t, containsStart(frames, "--allow", "MCPTool(sessionbus__sessionbus)", "--relay-on-demand"), "lane leader omitted exact Sessionbus grant")
 	check(t, countStartsContaining(frames, "--allow", "MCPTool(sessionbus__sessionbus)") == 1, "Sessionbus grant escaped the one private leader")
 	check(t, containsStart(frames, "--relay-on-demand") && !containsStart(frames, "--no-exit-on-disconnect"), "leader argv did not preserve relay-on-demand")
-	check(t, countStartsContaining(frames, "--no-auto-update") == 1 && containsStart(frames, "--relay-on-demand", "--no-auto-update"), "only the private leader may pass --no-auto-update")
+	check(t, countStartsContaining(frames, "--no-auto-update") == 0, "a native start suppressed native auto-update")
 	check(t, countFrames(frames, "initialize") == 3, "authenticated startup hold absent: %d handshakes", countFrames(frames, "initialize"))
 	open := findFrame(frames, "session/new")
 	alias, err := sessionbusAlias()

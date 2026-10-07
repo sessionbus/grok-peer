@@ -477,17 +477,24 @@ func TestInteractiveLauncherOwnsLeaderHoldAndTUI(t *testing.T) {
 	check(t, !exists(filepath.Join(root, "lanes", host.LaunchTokenDigest(testSessionID)+".sock")), "peer endpoint remains")
 }
 
-func TestStartupHoldExitStopsInteractiveOwner(t *testing.T) {
+func TestStartupHoldLossKeepsTUI(t *testing.T) {
 	root := testsocket.Directory(t)
 	recordPath := filepath.Join(root, "record")
 	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
 	t.Setenv("GROK_TEST_RECORD", recordPath)
 	tuiPID, leaderPID, holdPID := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid")
-	release := filepath.Join(root, "release-hold")
+	holdRelease, tuiRelease := filepath.Join(root, "release-hold"), filepath.Join(root, "release-tui")
 	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPID)
 	t.Setenv("GROK_TEST_LEADER_PID", leaderPID)
 	t.Setenv("GROK_TEST_OBSERVER_PID", holdPID)
-	t.Setenv("GROK_TEST_HOLD_EXIT", release)
+	t.Setenv("GROK_TEST_HOLD_EXIT", holdRelease)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", tuiRelease)
+	var killed []int
+	previous := killProcess
+	killProcess = func(pid int, signal syscall.Signal) error { killed = append(killed, pid); return previous(pid, signal) }
+	t.Cleanup(func() { killProcess = previous })
+	stderr := captureStderr(t)
 	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
 	must(t, err)
 	done := make(chan error, 1)
@@ -496,10 +503,30 @@ func TestStartupHoldExitStopsInteractiveOwner(t *testing.T) {
 	defer closeProcessHandle(tuiPidfd)
 	defer closeProcessHandle(leaderPidfd)
 	defer closeProcessHandle(holdPidfd)
-	must(t, os.WriteFile(release, nil, 0o600))
-	err = <-done
-	check(t, strings.Contains(err.Error(), "Grok startup hold closed"), "launcher error = %v", err)
-	check(t, !processRunning(t, tuiPidfd) && !processRunning(t, holdPidfd) && !processRunning(t, leaderPidfd), "bootstrap process survived startup-hold failure")
+	must(t, os.WriteFile(holdRelease, nil, 0o600))
+	for deadline := time.Now().Add(5 * time.Second); processRunning(t, holdPidfd) && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	check(t, !processRunning(t, holdPidfd), "startup hold did not exit")
+	// Losing the startup hold after the TUI started must not end the session.
+	select {
+	case err = <-done:
+		t.Fatalf("launcher returned after its startup hold closed: %v", err)
+	case <-time.After(2 * time.Second):
+	}
+	check(t, processRunning(t, tuiPidfd), "startup-hold loss terminated the TUI")
+	must(t, os.WriteFile(tuiRelease, nil, 0o600))
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("launcher did not return after the TUI exited")
+	}
+	var exited *exec.ExitError
+	check(t, errors.As(err, &exited) && exited.ExitCode() == 7 && !strings.Contains(err.Error(), "startup hold"), "launcher result = %v, want the TUI's own exit 7", err)
+	check(t, !processRunning(t, leaderPidfd), "leader survived the TUI")
+	// The hold was reaped long before teardown; its process-group number must not be signalled.
+	check(t, !slices.Contains(killed, -interactivePID(t, holdPID)), "teardown signalled the reaped startup-hold group: %v", killed)
+	check(t, strings.Contains(stderr(), "sessionbus: Grok startup hold closed during the session"), "startup-hold notice missing")
 	clients := peerClientPIDs(t, records(t, recordPath))
 	check(t, len(clients) == 1 && slices.Equal(peerClientMethods(records(t, recordPath), clients[0]), []string{"initialize", "authenticate"}), "startup hold was not quiet")
 }
@@ -528,15 +555,18 @@ func TestInteractiveLauncherReturnsProductExit(t *testing.T) {
 	closeProcessHandle(holdPidfd)
 }
 
-func TestInteractiveLeaderExitRetiresLauncher(t *testing.T) {
+func TestInteractiveLeaderExitKeepsTUI(t *testing.T) {
 	root := testsocket.Directory(t)
 	recordPath := filepath.Join(root, "record")
 	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
 	t.Setenv("GROK_TEST_RECORD", recordPath)
-	tuiPath, leaderPath, holdPath := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid")
+	tuiPath, leaderPath, holdPath, release := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid"), filepath.Join(root, "release")
 	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPath)
 	t.Setenv("GROK_TEST_LEADER_PID", leaderPath)
 	t.Setenv("GROK_TEST_OBSERVER_PID", holdPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", release)
+	stderr := captureStderr(t)
 	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
 	must(t, err)
 	done := make(chan error, 1)
@@ -550,17 +580,101 @@ func TestInteractiveLeaderExitRetiresLauncher(t *testing.T) {
 	must(t, err)
 	check(t, len(launch) == 1 && processRunning(t, tuiPidfd) && processRunning(t, holdPidfd), "interactive launch was not live: %v", launch)
 	must(t, syscall.Kill(leaderPID, syscall.SIGTERM))
+	// A leader exit (for example a native update) must not end the session: the TUI owns its native reconnect.
+	select {
+	case err = <-done:
+		t.Fatalf("launcher returned after its leader exited: %v", err)
+	case <-time.After(2 * time.Second):
+	}
+	check(t, processRunning(t, tuiPidfd), "leader exit terminated the TUI")
+	must(t, os.WriteFile(release, nil, 0o600))
 	select {
 	case err = <-done:
 	case <-time.After(10 * time.Second):
-		_ = syscall.Kill(tuiPID, syscall.SIGTERM)
-		<-done
-		t.Fatal("launcher outlived its leader")
+		t.Fatal("launcher did not return after the TUI exited")
 	}
-	// The leader's own Wait error, then the direct TUI the launcher terminated and reaped.
-	check(t, strings.Contains(err.Error(), "Grok leader exited") && slices.Equal(exitedPIDs(err), []int{leaderPID, tuiPID}), "launcher error = %v", err)
-	check(t, !processRunning(t, holdPidfd) && errors.Is(syscall.Kill(-holdPID, 0), syscall.ESRCH), "startup hold group survived its leader")
-	check(t, !exists(launch[0]), "launch state survived its leader")
+	// The result is the TUI's own exit alone; the leader exit is a notice, not part of it.
+	var exited *exec.ExitError
+	check(t, errors.As(err, &exited) && exited.ExitCode() == 7 && slices.Equal(exitedPIDs(err), []int{tuiPID}), "launcher result = %v", err)
+	check(t, !processRunning(t, holdPidfd) && errors.Is(syscall.Kill(-holdPID, 0), syscall.ESRCH), "startup hold group survived the TUI")
+	check(t, !exists(launch[0]), "launch state survived the TUI")
+	check(t, strings.Contains(stderr(), "sessionbus: Grok leader exited during the session"), "leader-exit notice missing")
+}
+
+func TestOrdinaryTUIExitIsNotHoldLoss(t *testing.T) {
+	// The TUI exits at once; its own teardown cancels the startup hold. The gap makes the
+	// TUI result and the hold closure ready together before the loop's first select.
+	previous := interactiveSelectGap
+	interactiveSelectGap = func() { time.Sleep(300 * time.Millisecond) }
+	t.Cleanup(func() { interactiveSelectGap = previous })
+	for iteration := range 20 {
+		root := testsocket.Directory(t)
+		t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+		t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+		t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", "")
+		stderr := captureStderr(t)
+		plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+		must(t, err)
+		err = RunInteractive(context.Background(), plan)
+		notice := stderr()
+		var exited *exec.ExitError
+		check(t, errors.As(err, &exited) && exited.ExitCode() == 7, "iteration %d: launcher result = %v", iteration, err)
+		check(t, !strings.Contains(notice, "startup hold closed during the session") && !strings.Contains(notice, "leader exited during the session"), "iteration %d: ordinary TUI exit reported as a loss: %q", iteration, notice)
+	}
+}
+
+func TestStopAuxSkipsReapedProcessGroup(t *testing.T) {
+	var killed []int
+	previous := killProcess
+	killProcess = func(pid int, signal syscall.Signal) error { killed = append(killed, pid); return previous(pid, signal) }
+	t.Cleanup(func() { killProcess = previous })
+	gone := exec.Command("true")
+	gone.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	exitedProcess, err := startNative(gone)
+	must(t, err)
+	<-exitedProcess.done
+	// A waited process's group number may already belong to someone else.
+	stopAux(exitedProcess)
+	check(t, len(killed) == 0, "teardown signalled a reaped process group: %v", killed)
+	live := exec.Command("sleep", "30")
+	live.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	liveProcess, err := startNative(live)
+	must(t, err)
+	stopAux(liveProcess)
+	check(t, slices.Equal(killed, []int{-liveProcess.cmd.Process.Pid}), "owned live group not killed: %v", killed)
+	select {
+	case <-liveProcess.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("owned live group survived teardown")
+	}
+}
+
+// captureStderr redirects os.Stderr until the returned function is called (or
+// the test ends) and returns what was written, including by child processes.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	must(t, err)
+	previous := os.Stderr
+	os.Stderr = w
+	var buffer strings.Builder
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&buffer, r); close(copied) }()
+	var once sync.Once
+	restore := func() string {
+		once.Do(func() {
+			os.Stderr = previous
+			_ = w.Close()
+			select {
+			case <-copied:
+			case <-time.After(5 * time.Second):
+			}
+			_ = r.Close()
+		})
+		return buffer.String()
+	}
+	t.Cleanup(func() { restore() })
+	return restore
 }
 
 func TestLeaderCreatesDefaultStateRoot(t *testing.T) {
