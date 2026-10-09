@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
 	"github.com/sessionbus/peer-common/host"
@@ -393,7 +395,44 @@ func grokPassthrough(arguments []string) bool {
 
 func ManagedHelper(environment []string) bool {
 	marker := environmentValue(environment, ManagedEnv)
-	return marker != "" && marker == environmentValue(environment, grokLeaderSocketEnv) && environmentValue(environment, grokSessionIDEnv) != ""
+	return marker != "" && marker == environmentValue(environment, grokLeaderSocketEnv) && environmentValue(environment, grokSessionIDEnv) != "" && !launchEnded(marker)
+}
+
+// launchEnded reports that a managed launch is over: its private launch directory,
+// the marker socket's parent, no longer exists. Only the launcher removes it, when it
+// returns. The socket itself can be missing during a live native leader turnover, and
+// any other stat error is not taken as the end of the launch.
+func launchEnded(marker string) bool {
+	_, err := os.Stat(filepath.Dir(marker))
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// launchPollInterval is how often a running managed helper checks its launch.
+var launchPollInterval = 2 * time.Second
+
+// WithManagedLaunch returns a context that is cancelled once the helper's managed
+// launch has ended. A native replacement leader can keep a helper running after the
+// launcher has quit; cancelling its context ends its MCP frontend and its Sessionbus
+// presence through their ordinary shutdown paths.
+func WithManagedLaunch(ctx context.Context, environment []string) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	marker, interval := environmentValue(environment, ManagedEnv), launchPollInterval
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if launchEnded(marker) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, cancel
 }
 
 // Required top-level values from native Grok 1.0.24 help, including its listed

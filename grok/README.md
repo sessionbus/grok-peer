@@ -143,6 +143,16 @@ launch directory does not stop one. The wrapper does not search for or stop the
 replacement. Stop a leftover one by its exact PID after confirming its command
 line.
 
+After a reconnect, the replacement can also keep the session loaded and run the
+session's Sessionbus helper (the `sessionbus` MCP server), which outlives the
+TUI. The helper therefore checks its launch every two seconds. Once the launcher
+has quit and removed its private launch directory, the helper ends its
+Sessionbus presence and exits, so the session's row retires a few seconds after
+`/quit` rather than at once. A missing socket alone, as during a reconnect, does
+not end it. If Grok starts the helper again after that, it stays inactive: it
+offers no Sessionbus tool and publishes no presence. The replacement leader and
+such an inactive helper can remain running until stopped.
+
 The replacement starts without the wrapper's leader arguments. Per Grok 1.0.35
 source (not observed in use), its session-default permission mode therefore
 comes from `config.toml` instead of the lane's `permission_mode`. TUI sessions
