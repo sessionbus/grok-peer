@@ -66,14 +66,15 @@ Held lane skills stay documentation only and are not packaged or activated.
 Independent extraction review is complete, and source `abe912d` was installed
 twice on the permanent development host with byte-equal post-install
 observations (binary SHA-256 `0564ac7a7c8cc8a963b405c5f690b29add8b239da40a5d8b66919af5f4ab90dd`).
-Authenticated field-free validation ran on the permanent development host
-(Sessionbus daemon build c9792c31, the v0.5.9 runtime) with grok-peer builds
-90784abb and f098af40; f098af40 has the same runtime as this release.
+For v0.5.9, authenticated field-free validation ran on the permanent
+development host (Sessionbus daemon build c9792c31, the v0.5.9 runtime) with
+grok-peer builds 90784abb and f098af40 (the v0.5.9 runtime).
 Interactive, managed-lane, persistent-lane, owner-exit, permission and lifecycle
 scenarios passed, except the private-leader respawn residue described under
-[Private leader loss](grok/README.md) and in the v0.5.9 release notes. This is
-scoped evidence, not blanket acceptance, and historical pre-split results are
-not rebound to it.
+[Private leader loss](grok/README.md) and in the v0.5.9 release notes. Later
+releases record their own evidence and limits in [docs/releases](docs/releases).
+This is scoped evidence, not blanket acceptance, and historical pre-split
+results are not rebound to it.
 
 ## Version reporting
 
