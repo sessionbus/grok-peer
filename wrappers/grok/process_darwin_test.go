@@ -42,6 +42,14 @@ func processRunning(t *testing.T, handle processHandle) bool {
 func waitProcessExit(t *testing.T, handle processHandle) {
 	t.Helper()
 	events := make([]unix.Kevent_t, 1)
-	_, err := unix.Kevent(handle.fd, nil, events, nil)
+	var err error
+	// kevent(2) can return EINTR when a signal interrupts the wait (the Go
+	// runtime retries kevent on EINTR for the same reason); retry only that.
+	for {
+		_, err = unix.Kevent(handle.fd, nil, events, nil)
+		if !errors.Is(err, unix.EINTR) {
+			break
+		}
+	}
 	must(t, err)
 }
