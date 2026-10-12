@@ -18,7 +18,7 @@ import (
 type PeerBackend struct {
 	mu                               sync.Mutex
 	identity                         kit.PeerIdentity
-	leader, cwd, socket, initialName string
+	launch, cwd, socket, initialName string
 	ctx                              context.Context
 	cancel                           context.CancelFunc
 	peer                             *kit.Peer
@@ -36,37 +36,41 @@ type PeerBackend struct {
 }
 
 func NewPeerBackend(ctx context.Context, env []string) (*PeerBackend, error) {
-	if !ManagedHelper(env) {
+	launch, facts, managed := managedLaunch(env)
+	if !managed {
 		return nil, errors.New("Grok peer identity is unavailable; start Grok with grok-peer")
 	}
-	groups := []string{}
-	if raw := environmentValue(env, host.GroupsEnv); raw != "" {
-		if json.Unmarshal([]byte(raw), &groups) != nil || groups == nil {
-			return nil, errors.New("SESSIONBUS_GROUPS must be a JSON array")
-		}
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
+	// The registration leaves SESSIONBUS_SOCKET empty, and the kit resolves the bus
+	// socket from this process's environment: apply the launch's socket before any use
+	// of the kit.
+	if err := os.Setenv(host.SocketEnv, facts.Socket); err != nil {
 		return nil, err
 	}
+	id := environmentValue(env, grokSessionIDEnv)
 	lifetime, cancel := context.WithCancel(ctx)
-	b := &PeerBackend{identity: kit.PeerIdentity{Protocol: 1, Product: Product, SessionID: environmentValue(env, grokSessionIDEnv), Groups: groups, Info: map[string]any{"cwd": cwd}}, leader: environmentValue(env, grokLeaderSocketEnv), cwd: cwd, socket: first(environmentValue(env, host.SocketEnv), kit.Socket()), ctx: lifetime, cancel: cancel, ready: make(chan struct{}), done: make(chan struct{}), changed: make(chan struct{}, 1), deliveryGate: make(chan struct{}, 1), slots: make(chan struct{}, maxACPPending)}
+	b := &PeerBackend{identity: kit.PeerIdentity{Protocol: 1, Product: Product, SessionID: id, Groups: facts.Groups, Info: map[string]any{"cwd": facts.Cwd}}, launch: launch, cwd: facts.Cwd, socket: facts.Socket, ctx: lifetime, cancel: cancel, ready: make(chan struct{}), done: make(chan struct{}), changed: make(chan struct{}, 1), deliveryGate: make(chan struct{}, 1), slots: make(chan struct{}, maxACPPending)}
 	b.deliveryGate <- struct{}{}
-	if name := environmentValue(env, host.NameEnv); name != "" {
-		won, e := claimInitialName(b.leader)
+	if facts.Name != "" {
+		won, e := claimInitialName(launch, id)
 		if e != nil {
 			cancel()
 			return nil, e
 		}
 		if won {
-			b.initialName = name
+			b.initialName = facts.Name
 		}
 	}
 	b.caller = kit.NewCaller(b.Call)
 	return b, nil
 }
-func claimInitialName(leader string) (bool, error) {
-	dir := filepath.Dir(leader)
+
+const initialNameClaim = "initial-name.claim"
+
+// claimInitialName reports whether this helper may apply the launch's requested name.
+// The claim is created exclusively and records the native session which owns it. A
+// later helper of that same session goes on while the claim is not completed; another
+// session, or any helper after completion, requests no name.
+func claimInitialName(dir, id string) (bool, error) {
 	info, err := os.Lstat(dir)
 	if err != nil {
 		return false, err
@@ -74,14 +78,28 @@ func claimInitialName(leader string) (bool, error) {
 	if !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return false, errors.New("Grok launch name claim requires a private runtime directory")
 	}
-	file, err := os.OpenFile(filepath.Join(dir, "initial-name.claim"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	path := filepath.Join(dir, initialNameClaim)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if errors.Is(err, os.ErrExist) {
-		return false, nil
+		owner, err := os.ReadFile(path)
+		return err == nil && string(owner) == id+"\n", err
 	}
 	if err != nil {
 		return false, err
 	}
-	return true, file.Close()
+	_, err = file.WriteString(id + "\n")
+	err = errors.Join(err, file.Close())
+	return err == nil, err
+}
+
+// completeInitialName ends the claim: no helper requests the name again.
+func completeInitialName(dir string) error {
+	file, err := os.OpenFile(filepath.Join(dir, initialNameClaim), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		return err
+	}
+	_, err = file.WriteString("completed\n")
+	return errors.Join(err, file.Close())
 }
 
 // Native ACP must not run before Grok receives its MCP initialize response.
@@ -115,7 +133,7 @@ func (b *PeerBackend) runOwner() error {
 	if err := b.ctx.Err(); err != nil {
 		return err
 	}
-	observer, process, err := startPeerClient(b.ctx, b.ctx, b.leader, b.cwd, func(frame acpFrame) {
+	observer, process, err := startPeerClient(b.ctx, b.ctx, b.cwd, func(frame acpFrame) {
 		if !replayFrame(frame) && frame.Method == "_x.ai/sessions/changed" {
 			select {
 			case b.changed <- struct{}{}:
@@ -124,7 +142,7 @@ func (b *PeerBackend) runOwner() error {
 		}
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("start Grok observer in launch working directory %s: %w", b.cwd, err)
 	}
 	b.mu.Lock()
 	b.observer, b.process = observer, process
@@ -151,21 +169,27 @@ func (b *PeerBackend) runOwner() error {
 		}
 	}
 	if b.initialName != "" {
-		var result struct {
-			Success bool `json:"success"`
-		}
-		if err = observer.request(b.ctx, "_x.ai/session/rename", map[string]string{"sessionId": b.identity.SessionID, "title": b.initialName}, &result); err != nil {
-			return err
-		}
-		if !result.Success {
-			return errors.New("native initial rename failed")
-		}
-		row, err = roster(b.ctx, observer, b.identity.SessionID)
-		if err != nil {
-			return err
-		}
+		// An earlier helper of this session may already have applied the name.
 		if row.Title != b.initialName {
-			return errors.New("native initial title does not match requested name")
+			var result struct {
+				Success bool `json:"success"`
+			}
+			if err = observer.request(b.ctx, "_x.ai/session/rename", map[string]string{"sessionId": b.identity.SessionID, "title": b.initialName}, &result); err != nil {
+				return err
+			}
+			if !result.Success {
+				return errors.New("native initial rename failed")
+			}
+			row, err = roster(b.ctx, observer, b.identity.SessionID)
+			if err != nil {
+				return err
+			}
+			if row.Title != b.initialName {
+				return errors.New("native initial title does not match requested name")
+			}
+		}
+		if err = completeInitialName(b.launch); err != nil {
+			return err
 		}
 	}
 	if actual := kit.Socket(); actual != b.socket {

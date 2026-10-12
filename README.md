@@ -17,7 +17,9 @@ Stable releases are published from signed `vX.Y.Z` tags; see
 by default (set `SESSIONBUS_VERSION` to pin one), verifies checksums and the
 archive role, and does not fetch another product. v0.5.9 and later require
 Sessionbus v0.5.9. Installers from the earlier combined peers repository are not
-used for these releases.
+used for these releases. The installer registers the Sessionbus helper as the
+`sessionbus` MCP server in your Grok user config; it replaces an entry of that
+name and re-enables one you had disabled.
 
 See [the Grok guide](grok/README.md) for install/update instructions, the private
 `grok-peer-mcp` alias, native flags, the managed permission rule, resume, identity
@@ -92,7 +94,11 @@ agree.
 session behavior. Native `--continue` remains separate. Tokens after literal `--`,
 attached native values and the first required value of recognized native options
 are preserved. These aliases apply to interactive launches; they do not change the
-typed lane `permission_mode` API.
+typed lane `permission_mode` API. An interactive launch runs on Grok's own
+leader: caller `--allow` and `--deny` are passed on unchanged and have no effect
+in leader mode, so permission rules belong in Grok's config. `--print`,
+`--memory-flush` and a confining `--sandbox` value are refused; the
+[Grok guide](grok/README.md) gives the reasons and the limits of a shared leader.
 
 ## Delivery and presence
 

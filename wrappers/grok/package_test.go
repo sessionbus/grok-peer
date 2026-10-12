@@ -30,13 +30,16 @@ func TestPackagedPrivateEntryIsInertAndOnlyGenericSkillIsInstalled(t *testing.T)
 	skills, err := os.ReadDir(filepath.Join(stage, "plugin/skills"))
 	must(t, err)
 	check(t, len(skills) == 1 && skills[0].Name() == "sessionbus", "active skills=%v", skills)
-	// Execute the actual shipped native entry against its permanent-layout alias.
-	home := filepath.Join(stage, "home")
-	permanent := filepath.Join(home, ".local/libexec/sessionbus/grok")
-	must(t, os.MkdirAll(permanent, 0700))
-	must(t, os.Symlink(filepath.Join(stage, Product), filepath.Join(permanent, PrivateAlias)))
-	cmd := exec.Command(filepath.Join(stage, "plugin/scripts/native-entry"))
-	cmd.Env = append(os.Environ(), "HOME="+home, ManagedEnv+"=", "SESSIONBUS_LANE_SOCKET=", "SESSIONBUS_LANE_TOKEN=", "GROK_SESSION_ID=", "GROK_LEADER_SOCKET=")
+	// The plugin carries the skill only. A helper definition in it would be expanded
+	// in the leader, with the values of whichever launch started that leader.
+	for _, removed := range []string{"plugin/.mcp.json", "plugin/scripts"} {
+		_, err := os.Lstat(filepath.Join(stage, removed))
+		check(t, os.IsNotExist(err), "package still holds %s: %v", removed, err)
+	}
+	// Execute the actual shipped alias as the registration starts it for a plain Grok
+	// client: the marker's reference arrives unexpanded and the other names are empty.
+	cmd := exec.Command(filepath.Join(stage, PrivateAlias))
+	cmd.Env = append(os.Environ(), ManagedEnv+"=${"+ManagedEnv+"}", "SESSIONBUS_GROUPS=", "SESSIONBUS_SESSION_NAME=", "SESSIONBUS_SOCKET=", "SESSIONBUS_LANE_SOCKET=", "SESSIONBUS_LAUNCH_TOKEN=", "SESSIONBUS_SESSION_ID=", "SESSIONBUS_LOCAL_KEY=", "GROK_SESSION_ID="+testSessionID)
 	in, err := cmd.StdinPipe()
 	must(t, err)
 	out, err := cmd.StdoutPipe()

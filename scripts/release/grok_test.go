@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +35,7 @@ case "$2" in
  list) if [ -f "$HOME/native-repo" ]; then printf '[{"name":"sessionbus","repo_key":"plugin-1234"}]\n'; else printf '[]\n'; fi;;
  uninstall) test "$3" = sessionbus; test "$4" = --keep-data; rm "$HOME/native-repo";;
  install) test ! -f "$HOME/native-repo"; printf installed > "$HOME/native-repo";;
+ add) test "$1" = mcp; test -f "$HOME/native-repo"; test ! -f "$HOME/refuse-add" || { echo 'native refused the registration' >&2; exit 3; }; printf '%s\n' "$@" > "$HOME/native-mcp";;
  *) exit 4;;
 esac
 `)
@@ -55,5 +57,28 @@ esac
 		if data, err := os.ReadFile(filepath.Join(home, "unrelated")); err != nil || string(data) != "keep" {
 			t.Fatalf("unrelated data changed: %q %v", data, err)
 		}
+		// The helper's registration reaches native after the plugin install: only the
+		// managed marker is a reference, unexpanded, and the other seven names are empty.
+		registered, err := os.ReadFile(filepath.Join(home, "native-mcp"))
+		want := strings.Join([]string{"mcp", "add", "sessionbus", "-s", "user",
+			"-e", "SESSIONBUS_GROK_MANAGED=${SESSIONBUS_GROK_MANAGED}",
+			"-e", "SESSIONBUS_GROUPS=", "-e", "SESSIONBUS_SESSION_NAME=", "-e", "SESSIONBUS_SOCKET=",
+			"-e", "SESSIONBUS_LANE_SOCKET=", "-e", "SESSIONBUS_LAUNCH_TOKEN=", "-e", "SESSIONBUS_SESSION_ID=",
+			"-e", "SESSIONBUS_LOCAL_KEY=", "--", filepath.Join(root, "grok-peer-mcp")}, "\n") + "\n"
+		if err != nil || string(registered) != want {
+			t.Fatalf("install %d registered %q (%v), want %q", i, registered, err, want)
+		}
+		if err := os.Remove(filepath.Join(home, "native-mcp")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A refused registration is the installer's own failure: native's message and a
+	// non-zero status, no success line. Running the installer again completes it.
+	put(filepath.Join(home, "refuse-add"), "")
+	c := exec.Command("sh", filepath.Join(src, "install"))
+	c.Env = append(os.Environ(), "HOME="+home, "PATH="+bin+":"+os.Getenv("PATH"))
+	out, err := c.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "native refused the registration") || strings.Contains(string(out), "Installed ") {
+		t.Fatalf("refused registration: %v %s", err, out)
 	}
 }

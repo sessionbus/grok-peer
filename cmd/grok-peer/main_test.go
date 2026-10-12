@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,14 +31,93 @@ func TestLaneModeRejectsArguments(t *testing.T) {
 	}
 }
 
-func TestManagedHelperRequiresMatchingNativeLeader(t *testing.T) {
-	for _, env := range [][]string{nil, {"SESSIONBUS_GROK_MANAGED=private", "GROK_SESSION_ID=native"}, {"SESSIONBUS_GROK_MANAGED=private", "GROK_LEADER_SOCKET=ordinary", "GROK_SESSION_ID=native"}} {
-		if grok.ManagedHelper(env) {
-			t.Fatalf("foreign/inherited activation: %v", env)
+// launchDirectory writes a managed launch's directory as the launcher does: private,
+// holding the facts file with its four fields.
+func launchDirectory(t *testing.T, path, bus string) {
+	t.Helper()
+	launchDirectoryWith(t, path, map[string]any{"socket": bus, "groups": []string{}, "name": "", "cwd": filepath.Dir(path)})
+}
+
+func launchDirectoryWith(t *testing.T, path string, fields map[string]any) {
+	t.Helper()
+	facts, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "launch.json"), facts, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagedHelperRequiresLiveLaunchDirectoryWithFacts(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Relative names resolve here, each to a live launch directory holding facts: only
+	// the absolute-path rule keeps them inert, as it does the reference a plain Grok
+	// client hands on unexpanded.
+	t.Chdir(root)
+	live := filepath.Join(root, "grok-launch-live")
+	for _, name := range []string{"grok-launch-live", "${SESSIONBUS_GROK_MANAGED}"} {
+		launchDirectory(t, filepath.Join(root, name), filepath.Join(root, "bus"))
+	}
+	regular, bare, undecoded := filepath.Join(root, "regular"), filepath.Join(root, "grok-launch-bare"), filepath.Join(root, "grok-launch-undecoded")
+	if err := os.WriteFile(regular, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{bare, undecoded} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if !grok.ManagedHelper([]string{"SESSIONBUS_GROK_MANAGED=private", "GROK_LEADER_SOCKET=private", "GROK_SESSION_ID=native"}) {
-		t.Fatal("matching native helper inactive")
+	if err := os.WriteFile(filepath.Join(undecoded, "launch.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inert := map[string][]string{
+		"no environment":          nil,
+		"empty marker":            {"SESSIONBUS_GROK_MANAGED=", "GROK_SESSION_ID=native"},
+		"unexpanded reference":    {"SESSIONBUS_GROK_MANAGED=${SESSIONBUS_GROK_MANAGED}", "GROK_SESSION_ID=native"},
+		"relative path":           {"SESSIONBUS_GROK_MANAGED=grok-launch-live", "GROK_SESSION_ID=native"},
+		"regular file":            {"SESSIONBUS_GROK_MANAGED=" + regular, "GROK_SESSION_ID=native"},
+		"missing directory":       {"SESSIONBUS_GROK_MANAGED=" + filepath.Join(root, "grok-launch-gone"), "GROK_SESSION_ID=native"},
+		"directory without facts": {"SESSIONBUS_GROK_MANAGED=" + bare, "GROK_SESSION_ID=native"},
+		"undecodable facts":       {"SESSIONBUS_GROK_MANAGED=" + undecoded, "GROK_SESSION_ID=native"},
+		"no native session":       {"SESSIONBUS_GROK_MANAGED=" + live},
+		"empty native session":    {"SESSIONBUS_GROK_MANAGED=" + live, "GROK_SESSION_ID="},
+	}
+	// Facts count only whole: the group list, and an absolute bus socket and working directory.
+	bus := filepath.Join(root, "bus")
+	for name, fields := range map[string]map[string]any{
+		"facts without groups":         {"socket": bus, "name": "", "cwd": root},
+		"facts with a relative cwd":    {"socket": bus, "groups": []string{}, "name": "", "cwd": "work"},
+		"facts with an empty cwd":      {"socket": bus, "groups": []string{}, "name": "", "cwd": ""},
+		"facts without cwd":            {"socket": bus, "groups": []string{}, "name": ""},
+		"facts with a relative socket": {"socket": "bus", "groups": []string{}, "name": "", "cwd": root},
+		"facts with an empty socket":   {"socket": "", "groups": []string{}, "name": "", "cwd": root},
+		"facts without socket":         {"groups": []string{}, "name": "", "cwd": root},
+	} {
+		directory := filepath.Join(root, "grok-launch-"+strings.ReplaceAll(name, " ", "-"))
+		launchDirectoryWith(t, directory, fields)
+		inert[name] = []string{"SESSIONBUS_GROK_MANAGED=" + directory, "GROK_SESSION_ID=native"}
+	}
+	for name, env := range inert {
+		if grok.ManagedHelper(env) {
+			t.Errorf("%s activated the helper: %v", name, env)
+		}
+	}
+	// Grok's own leader is not this launch's: its socket no longer decides anything.
+	for name, env := range map[string][]string{
+		"live launch":                {"SESSIONBUS_GROK_MANAGED=" + live, "GROK_SESSION_ID=native"},
+		"live launch, other leader":  {"SESSIONBUS_GROK_MANAGED=" + live, "GROK_LEADER_SOCKET=ordinary", "GROK_SESSION_ID=native"},
+		"live launch, empty sockets": {"SESSIONBUS_GROK_MANAGED=" + live, "GROK_LEADER_SOCKET=", "SESSIONBUS_SOCKET=", "GROK_SESSION_ID=native"},
+	} {
+		if !grok.ManagedHelper(env) {
+			t.Errorf("%s left the helper inactive: %v", name, env)
+		}
 	}
 }
 
@@ -74,11 +154,11 @@ func TestSharedMCPEOFSettlesActualCaller(t *testing.T) {
 	}
 }
 
-// managedEntry runs the real runMCP as a managed helper whose launch marker is
-// launch/grok-native.sock, with stdin and stdout on pipes. No real Grok can start:
-// PATH is empty, HOME and GROK_HOME are private, and the test stops unless grok is
-// unresolvable before anything runs.
-func managedEntry(t *testing.T, launch, bus string) (stdin io.WriteCloser, stdout *bufio.Scanner, done <-chan error) {
+// managedEntry runs the real runMCP as a helper whose launch marker is the directory
+// launch, with stdin and stdout on pipes. No real Grok can start: PATH is empty, HOME
+// and GROK_HOME are private, and the test stops unless grok is unresolvable before
+// anything runs.
+func managedEntry(t *testing.T, launch, bus, lane string) (stdin io.WriteCloser, stdout *bufio.Scanner, done <-chan error) {
 	t.Helper()
 	empty := t.TempDir()
 	t.Setenv("PATH", empty)
@@ -87,10 +167,8 @@ func managedEntry(t *testing.T, launch, bus string) (stdin io.WriteCloser, stdou
 	if path, err := exec.LookPath("grok"); err == nil {
 		t.Fatalf("grok resolves to %s; refusing to run", path)
 	}
-	marker := filepath.Join(launch, "grok-native.sock")
-	t.Setenv(mcp.LaneSocketEnv, "")
-	t.Setenv(grok.ManagedEnv, marker)
-	t.Setenv("GROK_LEADER_SOCKET", marker)
+	t.Setenv(mcp.LaneSocketEnv, lane)
+	t.Setenv(grok.ManagedEnv, launch)
 	t.Setenv("GROK_SESSION_ID", "native")
 	t.Setenv(host.SocketEnv, bus)
 	inRead, inWrite, err := os.Pipe()
@@ -118,23 +196,15 @@ func managedEntry(t *testing.T, launch, bus string) (stdin io.WriteCloser, stdou
 	return inWrite, bufio.NewScanner(outRead), result
 }
 
-func TestManagedEntryEndsWithItsLaunchDirectoryNotItsSocket(t *testing.T) {
+func TestManagedEntryEndsWithItsLaunchDirectory(t *testing.T) {
 	launch := filepath.Join(t.TempDir(), "grok-launch-1")
-	if err := os.Mkdir(launch, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(launch, "grok-native.sock"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	_, stdout, done := managedEntry(t, launch, filepath.Join(t.TempDir(), "bus"))
+	launchDirectory(t, launch, filepath.Join(t.TempDir(), "bus"))
+	// The registration hands the helper an empty bus socket; the facts file names it.
+	_, stdout, done := managedEntry(t, launch, "", "")
 	go func() {
 		for stdout.Scan() {
 		}
 	}()
-	// A native leader turnover can remove the socket; the launch and the helper continue.
-	if err := os.Remove(filepath.Join(launch, "grok-native.sock")); err != nil {
-		t.Fatal(err)
-	}
 	select {
 	case err := <-done:
 		t.Fatalf("helper ended while its launch was live: %v", err)
@@ -150,6 +220,57 @@ func TestManagedEntryEndsWithItsLaunchDirectoryNotItsSocket(t *testing.T) {
 		t.Logf("helper returned %v after %s", err, time.Since(removed).Round(time.Millisecond))
 	case <-time.After(10 * time.Second):
 		t.Fatal("helper kept running after its launch ended")
+	}
+}
+
+// The lane decision comes first: a helper given a lane socket forwards to it, also when
+// its environment holds the marker of a live managed launch.
+func TestLaneSocketSelectsTheForwarderOverALiveManagedLaunch(t *testing.T) {
+	root := testsocket.Directory(t)
+	lane, leader := filepath.Join(root, "lane"), filepath.Join(root, "leader.sock")
+	listener, err := net.Listen("unix", lane)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	identity := make(chan string, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		// Closing without an acknowledgement ends the forwarder.
+		defer connection.Close()
+		line, _ := bufio.NewReader(connection).ReadString('\n')
+		identity <- line
+	}()
+	// A managed backend would claim this launch's requested name as soon as it is built.
+	launch := filepath.Join(t.TempDir(), "grok-launch-1")
+	launchDirectoryWith(t, launch, map[string]any{"socket": filepath.Join(root, "bus"), "groups": []string{}, "name": "requested", "cwd": root})
+	t.Setenv("GROK_LEADER_SOCKET", leader)
+	_, _, done := managedEntry(t, launch, "", lane)
+	select {
+	case line := <-identity:
+		var native struct {
+			SessionID string `json:"session_id"`
+			Leader    string `json:"leader"`
+		}
+		if err := json.Unmarshal([]byte(line), &native); err != nil || native.SessionID != "native" || native.Leader != leader {
+			t.Fatalf("lane endpoint received %q (%v)", line, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("helper did not reach its lane endpoint")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("forwarder ended cleanly without an endpoint acknowledgement")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("forwarder kept running after its endpoint closed")
+	}
+	if _, err := os.Lstat(filepath.Join(launch, "initial-name.claim")); !os.IsNotExist(err) {
+		t.Fatalf("a managed backend ran beside the lane forwarder: %v", err)
 	}
 }
 
@@ -179,7 +300,7 @@ func TestManagedEntryStartedAfterItsLaunchIsInert(t *testing.T) {
 			_ = connection.Close()
 		}
 	}()
-	stdin, stdout, done := managedEntry(t, filepath.Join(t.TempDir(), "grok-launch-gone"), bus)
+	stdin, stdout, done := managedEntry(t, filepath.Join(t.TempDir(), "grok-launch-gone"), bus, "")
 	enc := json.NewEncoder(stdin)
 	for id, method := range []string{"initialize", "tools/list"} {
 		params := map[string]any{}

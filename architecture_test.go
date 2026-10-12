@@ -187,7 +187,6 @@ func TestSPDXAndLicenseCoverage(t *testing.T) {
 	}
 	for _, path := range []string{
 		"docs/designs/grok-0.5.0/legacy-lane-skill/scripts/lane-preflight",
-		"grok/scripts/native-entry",
 	} {
 		if firstOrSecondLine(read(t, path)) != "# SPDX-License-Identifier: MIT" {
 			t.Errorf("shell source lacks MIT SPDX header: %s", path)
@@ -219,15 +218,13 @@ func TestRepositoryURLsAndRemovedPaths(t *testing.T) {
 }
 
 func TestRetainedManifestCommandReachability(t *testing.T) {
-	if command := manifestCommand(t, "grok/.mcp.json"); command != "${GROK_PLUGIN_ROOT}/scripts/native-entry" {
-		t.Errorf("Grok manifest command = %q", command)
-	}
-	if info, err := os.Stat("grok/scripts/native-entry"); err != nil || info.Mode()&0o111 == 0 {
-		t.Errorf("Grok manifest entry is absent or not executable: %v", err)
-	}
-	entry := read(t, "grok/scripts/native-entry")
-	if !bytes.Contains(entry, []byte("/.local/libexec/sessionbus/grok/grok-peer-mcp")) || !bytes.Contains(entry, []byte("exec \"$peer_binary\"")) {
-		t.Error("Grok manifest entry does not resolve to the installed grok-peer binary")
+	// The plugin carries no helper definition: Grok reads a plugin's only in the leader,
+	// with the environment of whichever launch started it. The installer registers the
+	// helper in the user's Grok config instead.
+	for _, path := range []string{"grok/.mcp.json", "grok/scripts"} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Errorf("Grok plugin still carries a helper definition: %s (%v)", path, err)
+		}
 	}
 	skills, err := filepath.Glob("grok/skills/*/SKILL.md")
 	if err != nil || len(skills) != 1 || skills[0] != "grok/skills/sessionbus/SKILL.md" {
@@ -253,10 +250,16 @@ func TestGrokPackageAndInstallerBoundary(t *testing.T) {
 			t.Errorf("Grok archive recipe lacks %q", exact)
 		}
 	}
-	for _, exact := range []string{`case "$product" in grok) ;;`, `ln -sfn grok-peer "$root/grok-peer-mcp"`, `grok plugin uninstall sessionbus --keep-data`, `grok plugin install "$root/plugin" --trust`} {
+	// The helper's registration: only the managed marker is interpolated, by the client
+	// which loads the session; the other seven Sessionbus names are constant empty.
+	registration := `grok mcp add sessionbus -s user -e 'SESSIONBUS_GROK_MANAGED=${SESSIONBUS_GROK_MANAGED}' -e SESSIONBUS_GROUPS= -e SESSIONBUS_SESSION_NAME= -e SESSIONBUS_SOCKET= -e SESSIONBUS_LANE_SOCKET= -e SESSIONBUS_LAUNCH_TOKEN= -e SESSIONBUS_SESSION_ID= -e SESSIONBUS_LOCAL_KEY= -- "$root/grok-peer-mcp"`
+	for _, exact := range []string{`case "$product" in grok) ;;`, `ln -sfn grok-peer "$root/grok-peer-mcp"`, `grok plugin uninstall sessionbus --keep-data`, `grok plugin install "$root/plugin" --trust`, registration} {
 		if !bytes.Contains(installer, []byte(exact)) {
 			t.Errorf("Grok archive installer lacks %q", exact)
 		}
+	}
+	if bytes.Count(installer, []byte("${")) != 1 || bytes.Index(installer, []byte(registration)) < bytes.Index(installer, []byte(`grok plugin install "$root/plugin" --trust`)) {
+		t.Error("Grok archive installer must register the helper last, with the managed marker as its only reference")
 	}
 	for _, removed := range []string{"internal/", "wrappers/pi", "wrappers/omp", "wrappers/pifamily", "docs/products/", "npm ", "qwen", "kilo", "opencode", "omp-peer", "pi-peer", "package-claude", "package-codex"} {
 		if bytes.Contains(pack, []byte(removed)) || bytes.Contains(installer, []byte(removed)) {
@@ -275,19 +278,6 @@ func TestReadmeIsTheSourceInstallAuthority(t *testing.T) {
 			t.Errorf("README lacks %q", exact)
 		}
 	}
-}
-
-func manifestCommand(t *testing.T, path string) string {
-	t.Helper()
-	var manifest struct {
-		Servers map[string]struct {
-			Command string `json:"command"`
-		} `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(read(t, path), &manifest); err != nil {
-		t.Fatal(err)
-	}
-	return manifest.Servers["sessionbus"].Command
 }
 
 func checkGoImports(t *testing.T, root string, check func(string, string)) {

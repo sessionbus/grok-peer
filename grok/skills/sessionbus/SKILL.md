@@ -17,6 +17,9 @@ The globally installed Grok plugin exposes this skill in ordinary Grok too.
 Sessionbus tools require an explicit managed `grok-peer` launch. Ordinary Grok
 starts an inert helper with no tools and no bus presence; do not try to enable
 it by setting identity environment variables or invoking its private entry.
+A managed session that a plain Grok client loads in leader mode gets that inert
+helper too: its tools and bus presence are gone until a `grok-peer` launch loads
+the session again.
 
 Use `sessionbus__sessionbus` with `{action, arguments}`. The advertised actions
 are list, send, spawn, describe, trace, run, start, wait, status, ack, interrupt,

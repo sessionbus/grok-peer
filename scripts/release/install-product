@@ -27,6 +27,7 @@ case "$product" in
    grok plugin uninstall sessionbus --keep-data
   fi
   grok plugin install "$root/plugin" --trust
+  grok mcp add sessionbus -s user -e 'SESSIONBUS_GROK_MANAGED=${SESSIONBUS_GROK_MANAGED}' -e SESSIONBUS_GROUPS= -e SESSIONBUS_SESSION_NAME= -e SESSIONBUS_SOCKET= -e SESSIONBUS_LANE_SOCKET= -e SESSIONBUS_LAUNCH_TOKEN= -e SESSIONBUS_SESSION_ID= -e SESSIONBUS_LOCAL_KEY= -- "$root/grok-peer-mcp"
   ;;
 esac
 printf 'Installed %s. Ensure ~/.local/bin is on your login PATH.\n' "$HOME/.local/bin/$product-peer"
