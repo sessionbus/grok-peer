@@ -177,6 +177,77 @@ func TestManagedLaunchRequiresHelperRegistration(t *testing.T) {
 	}
 }
 
+// An entry that Grok would not start is refused like a missing one, after the same
+// permission step: a boolean enabled = false, or the exact name in the top-level list.
+func TestManagedLaunchRefusesDisabledHelperRegistration(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	for name, test := range map[string]struct{ config, cause string }{
+		"enabled false":             {"[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = false\n", "disabled by enabled = false"},
+		"enabled false inline":      {"mcp_servers = { sessionbus = { command = \"grok-peer-mcp\", enabled = false } }\n", "disabled by enabled = false"},
+		"named in the list":         {"disabled_mcp_servers = [\"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n", "names sessionbus in disabled_mcp_servers"},
+		"named beside a non-string": {"disabled_mcp_servers = [\"sessionbus\", 1]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n", "names sessionbus in disabled_mcp_servers"},
+		"named among others":        {"disabled_mcp_servers = [\"other\", \"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = true\n", "names sessionbus in disabled_mcp_servers"},
+		"enabled false and listed":  {"disabled_mcp_servers = [\"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = false\n", "disabled by enabled = false"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(test.config), 0o600))
+			t.Setenv("GROK_HOME", home)
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			err = RunInteractive(context.Background(), plan)
+			check(t, err != nil && strings.Contains(err.Error(), test.cause) && strings.Contains(err.Error(), "grok mcp enable sessionbus") && !strings.Contains(err.Error(), "\n"), "disabled registration = %v", err)
+			check(t, len(records(t, recordPath)) == 0, "native started with a disabled helper registration: %s", records(t, recordPath))
+			launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+			must(t, err)
+			check(t, len(launch) == 0, "refused launch left its directory: %v", launch)
+			// The permission rule is ensured first, as for a missing entry.
+			written, err := os.ReadFile(filepath.Join(home, grokConfigFile))
+			must(t, err)
+			check(t, strings.HasPrefix(string(written), test.config) && strings.Contains(string(written), sessionbusNativeRule), "config after the refusal = %q", written)
+		})
+	}
+}
+
+// Only what Grok reads as disabling refuses. A list naming other servers, enabled = true,
+// a key Grok does not read, and shapes that are not a boolean or a list of strings leave
+// the launch as it is; nothing is trimmed or case-folded.
+func TestManagedLaunchProceedsWithEnabledHelperRegistration(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	entry := "[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n"
+	for name, config := range map[string]string{
+		"list names another server":    "disabled_mcp_servers = [\"other\"]\n\n" + entry,
+		"empty list":                   "disabled_mcp_servers = []\n\n" + entry,
+		"enabled true":                 entry + "enabled = true\n",
+		"disabled key in the entry":    entry + "disabled = true\n",
+		"enabled not a boolean":        entry + "enabled = \"false\"\n",
+		"list is not a list":           "disabled_mcp_servers = \"sessionbus\"\n\n" + entry,
+		"list holds only a non-string": "disabled_mcp_servers = [1]\n\n" + entry,
+		"other spellings of the name":  "disabled_mcp_servers = [\"Sessionbus\", \" sessionbus\", \"sessionbus \"]\n\n" + entry,
+		"list inside the entry":        entry + "disabled_mcp_servers = [\"sessionbus\"]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(config), 0o600))
+			t.Setenv("GROK_HOME", home)
+			must(t, os.RemoveAll(recordPath))
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			var exited *exec.ExitError
+			check(t, errors.As(RunInteractive(context.Background(), plan), &exited) && exited.ExitCode() == 7, "enabled registration did not run the TUI")
+			check(t, countStartsContaining(records(t, recordPath)) == 1, "enabled registration starts = %s", records(t, recordPath))
+		})
+	}
+}
+
 func TestManagedLaunchRefusesExpandableLaunchPath(t *testing.T) {
 	root := testsocket.Directory(t)
 	recordPath := filepath.Join(root, "record")

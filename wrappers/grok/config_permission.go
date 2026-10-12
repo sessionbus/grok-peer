@@ -86,7 +86,9 @@ func ensureSessionbusPermissionAt(home string) error {
 // ensureManagedConfig is the interactive launch's config step: the permission rule as
 // for every managed launch and, from that same read, the helper's registration. Only
 // the installer writes the registration, so a config which decodes without the
-// mcp_servers.sessionbus table refuses the launch.
+// mcp_servers.sessionbus table refuses the launch. So does one which disables that
+// entry in a form Grok reads: a boolean enabled = false in it, or its exact name in
+// a top-level disabled_mcp_servers list. Other shapes are not interpreted.
 func ensureManagedConfig(environment []string, cwd string) error {
 	home, err := resolvedGrokHome(environment, cwd)
 	if err != nil {
@@ -97,8 +99,23 @@ func ensureManagedConfig(environment []string, cwd string) error {
 		return err
 	}
 	servers, _ := parsed.root["mcp_servers"].(map[string]any)
-	if _, registered := servers["sessionbus"].(map[string]any); !registered {
+	entry, registered := servers["sessionbus"].(map[string]any)
+	if !registered {
 		return fmt.Errorf("Grok config %s has no mcp_servers.sessionbus entry; run the grok-peer installer to register the Sessionbus helper", filepath.Join(home, grokConfigFile))
+	}
+	if enabled, boolean := entry["enabled"].(bool); boolean && !enabled {
+		return fmt.Errorf("Grok config %s has mcp_servers.sessionbus disabled by enabled = false; run grok mcp enable sessionbus to enable the Sessionbus helper", filepath.Join(home, grokConfigFile))
+	}
+	names, _ := parsed.root["disabled_mcp_servers"].([]any)
+	listed := false
+	for _, name := range names {
+		// Grok skips members that are not strings and still honours the others.
+		if text, isText := name.(string); isText && text == "sessionbus" {
+			listed = true
+		}
+	}
+	if listed {
+		return fmt.Errorf("Grok config %s names sessionbus in disabled_mcp_servers; run grok mcp enable sessionbus to enable the Sessionbus helper", filepath.Join(home, grokConfigFile))
 	}
 	return nil
 }

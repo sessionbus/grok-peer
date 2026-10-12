@@ -78,7 +78,10 @@ invalid or unsupported config shape fails the launch without rewriting the
 file. Native deny and ask rules remain present, and Grok evaluates deny before
 ask before allow. From that same read, a managed interactive launch refuses
 before native starts when the config holds no `mcp_servers.sessionbus` entry,
-and names the installer.
+and names the installer. A managed interactive launch also refuses when the `sessionbus`
+entry is disabled in the user's Grok config (`enabled = false`, or its name in
+`disabled_mcp_servers`); `grok mcp enable sessionbus`, Grok's command for it
+in its 1.0.35 source, enables it again.
 
 A lane retains the exact `--allow` projection on its private leader for
 compatibility, although public Grok 1.0.13 through 1.0.38 do not forward those
