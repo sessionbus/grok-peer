@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	kit "github.com/antst/sessionbus/bus/sdk/go"
@@ -53,8 +54,8 @@ func NewPeerBackend(ctx context.Context, env []string) (*PeerBackend, error) {
 	if facts.Name != "" {
 		won, e := claimInitialName(launch, id)
 		if e != nil {
-			cancel()
-			return nil, e
+			// A claim that cannot be taken or read costs the name, not the presence.
+			fmt.Fprintln(os.Stderr, "sessionbus: Grok helper: initial name not requested:", e)
 		}
 		if won {
 			b.initialName = facts.Name
@@ -69,7 +70,8 @@ const initialNameClaim = "initial-name.claim"
 // claimInitialName reports whether this helper may apply the launch's requested name.
 // The claim is created exclusively and records the native session which owns it. A
 // later helper of that same session goes on while the claim is not completed; another
-// session, or any helper after completion, requests no name.
+// session, or any helper after completion, requests no name. Nor does a helper which
+// cannot take, read or interpret the claim: it reports that error.
 func claimInitialName(dir, id string) (bool, error) {
 	info, err := os.Lstat(dir)
 	if err != nil {
@@ -81,8 +83,15 @@ func claimInitialName(dir, id string) (bool, error) {
 	path := filepath.Join(dir, initialNameClaim)
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if errors.Is(err, os.ErrExist) {
-		owner, err := os.ReadFile(path)
-		return err == nil && string(owner) == id+"\n", err
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return false, err
+		}
+		owner, rest, terminated := strings.Cut(string(body), "\n")
+		if !terminated || owner == "" || strings.ReplaceAll(rest, "completed\n", "") != "" {
+			return false, errors.New("Grok launch name claim cannot be interpreted")
+		}
+		return owner == id && rest == "", nil
 	}
 	if err != nil {
 		return false, err
@@ -188,8 +197,10 @@ func (b *PeerBackend) runOwner() error {
 				return errors.New("native initial title does not match requested name")
 			}
 		}
-		if err = completeInitialName(b.launch); err != nil {
-			return err
+		if e := completeInitialName(b.launch); e != nil {
+			// The name is applied. An unfinished claim only lets a later helper of this
+			// session request it again.
+			fmt.Fprintln(os.Stderr, "sessionbus: Grok helper: initial name claim not completed:", e)
 		}
 	}
 	if actual := kit.Socket(); actual != b.socket {

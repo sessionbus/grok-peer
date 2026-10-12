@@ -95,10 +95,12 @@ session behavior. Native `--continue` remains separate. Tokens after literal `--
 attached native values and the first required value of recognized native options
 are preserved. These aliases apply to interactive launches; they do not change the
 typed lane `permission_mode` API. An interactive launch runs on Grok's own
-leader: caller `--allow` and `--deny` are passed on unchanged and have no effect
-in leader mode, so permission rules belong in Grok's config. `--print`,
-`--memory-flush` and a confining `--sandbox` value are refused; the
-[Grok guide](grok/README.md) gives the reasons and the limits of a shared leader.
+leader. Grok does not apply `--allow` and `--deny` given on the command line in
+leader mode (Grok's own behaviour per its 1.0.35 source; observed for one rule
+on Grok 1.0.52); grok-peer passes them on unchanged; rules belong in Grok's
+config. `--print`, `--memory-flush` and a confining `--sandbox` value are
+refused; the [Grok guide](grok/README.md) gives the reasons and the limits of a
+shared leader.
 
 ## Delivery and presence
 

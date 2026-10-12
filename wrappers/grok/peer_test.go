@@ -50,7 +50,19 @@ func TestInteractivePlan(t *testing.T) {
 		{[]string{"--permission-mode", "default", "--always-approve"}, []string{"--permission-mode", "default", "--always-approve"}, `[]`, ""},
 		{[]string{"--sandbox", "off"}, []string{"--sandbox", "off"}, `[]`, ""},
 		{[]string{"--sandbox=none", "--sandbox", "none", "--sandbox=off"}, []string{"--sandbox=none", "--sandbox", "none", "--sandbox=off"}, `[]`, ""},
-		{[]string{"--", "--sandbox", "workspace", "--print"}, []string{"--", "--sandbox", "workspace", "--print"}, `[]`, ""},
+		// An empty sandbox value is native's no override; a missing one is native's to judge.
+		{[]string{"--sandbox="}, []string{"--sandbox="}, `[]`, ""},
+		{[]string{"--sandbox", ""}, []string{"--sandbox", ""}, `[]`, ""},
+		{[]string{"--sandbox"}, []string{"--sandbox"}, `[]`, ""},
+		{[]string{"--sandbox", "--", "workspace"}, []string{"--sandbox", "--", "workspace"}, `[]`, ""},
+		// The required value of a native option is its value, whatever it spells.
+		{[]string{"--model", "--sandbox"}, []string{"--model", "--sandbox"}, `[]`, ""},
+		{[]string{"--rules", "--print"}, []string{"--rules", "--print"}, `[]`, ""},
+		{[]string{"--system-prompt", "--memory-flush"}, []string{"--system-prompt", "--memory-flush"}, `[]`, ""},
+		{[]string{"--model=--single"}, []string{"--model=--single"}, `[]`, ""},
+		{[]string{"--model", "--single", "--agent", "--leader", "--effort", "-pro"}, []string{"--model", "--single", "--agent", "--leader", "--effort", "-pro"}, `[]`, ""},
+		// Nothing after the delimiter is a flag.
+		{[]string{"--", "--sandbox", "workspace", "--print", "--memory-flush", "--leader", "--leader-socket", "elsewhere", "-p"}, []string{"--", "--sandbox", "workspace", "--print", "--memory-flush", "--leader", "--leader-socket", "elsewhere", "-p"}, `[]`, ""},
 	} {
 		plan, err := InteractivePlan(test.args, []string{"PATH=/bin", host.SessionIDEnv + "=inherited", host.NameEnv + "=inherited", host.GroupsEnv + `=["inherited"]`})
 		must(t, err)
@@ -63,16 +75,17 @@ func TestInteractivePlan(t *testing.T) {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil, "conflict/missing value accepted: %#v", args)
 	}
-	for _, args := range [][]string{{"--no-leader"}, {"--leader"}, {"--leader-socket", "elsewhere"}} {
+	// An option whose value is optional steps over nothing: the next token is a flag.
+	for _, args := range [][]string{{"--no-leader"}, {"--leader"}, {"--leader-socket", "elsewhere"}, {"--worktree", "--leader"}} {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil && strings.Contains(err.Error(), "grok-peer selects Grok's own leader"), "caller leader selection = %#v: %v", args, err)
 	}
-	for _, args := range [][]string{{"--single", "prompt"}, {"-pprompt"}, {"--prompt-file", "prompt.txt"}, {"--prompt-json", `[]`}, {"--output-format", "json"}, {"--json-schema", `{}`}, {"--max-turns", "1"}, {"--include-partial-messages"}, {"--print", "prompt"}, {"--print=prompt"}, {"--memory-flush"}} {
+	for _, args := range [][]string{{"--single", "prompt"}, {"-pprompt"}, {"--prompt-file", "prompt.txt"}, {"--prompt-json", `[]`}, {"--output-format", "json"}, {"--json-schema", `{}`}, {"--max-turns", "1"}, {"--include-partial-messages"}, {"--print", "prompt"}, {"--print=prompt"}, {"--memory-flush"}, {"--leader", "--single", "x"}, {"--resume", "--single"}} {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil && strings.Contains(err.Error(), "Sessionbus Grok lane"), "headless accepted: %#v", args)
 	}
 	// Native takes only the exact values off and none as no sandbox; nothing is trimmed or folded.
-	for _, args := range [][]string{{"--sandbox", "workspace"}, {"--sandbox=workspace"}, {"--sandbox", "devbox"}, {"--sandbox", "read-only"}, {"--sandbox=readonly"}, {"--sandbox", "strict"}, {"--sandbox", "custom-profile"}, {"--sandbox", "Off"}, {"--sandbox=NONE"}, {"--sandbox", " off"}, {"--sandbox="}, {"--sandbox"}, {"--sandbox", "off", "--sandbox", "workspace"}} {
+	for _, args := range [][]string{{"--sandbox", "workspace"}, {"--sandbox=workspace"}, {"--sandbox", "devbox"}, {"--sandbox", "read-only"}, {"--sandbox=readonly"}, {"--sandbox", "strict"}, {"--sandbox", "custom-profile"}, {"--sandbox", "Off"}, {"--sandbox=NONE"}, {"--sandbox", " off"}, {"--sandbox", "off", "--sandbox", "workspace"}, {"--model", "x", "--sandbox", "workspace"}} {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil && strings.Contains(err.Error(), "without a leader"), "confining sandbox accepted: %#v: %v", args, err)
 	}
@@ -181,6 +194,122 @@ func TestManagedLaunchRefusesExpandableLaunchPath(t *testing.T) {
 	entries, err := os.ReadDir(beside)
 	must(t, err)
 	check(t, len(entries) == 0, "refused launch left its directory: %v", entries)
+}
+
+func TestManagedLaunchRefusesNonUTF8LaunchPath(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	registeredGrokHome(t)
+	// The launch directory is created beside the bus socket; Grok cannot pass this name on.
+	beside := filepath.Join(root, "run\xff")
+	if err := os.Mkdir(beside, 0o700); err != nil {
+		t.Skipf("filesystem rejects a name that is not UTF-8: %v", err)
+	}
+	t.Setenv(host.SocketEnv, filepath.Join(beside, "sessionbus.sock"))
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+	must(t, err)
+	err = RunInteractive(context.Background(), plan)
+	check(t, err != nil && strings.Contains(err.Error(), "is not valid UTF-8"), "launch path that is not UTF-8 = %v", err)
+	check(t, len(records(t, recordPath)) == 0, "native started with a launch path that is not UTF-8: %s", records(t, recordPath))
+	entries, err := os.ReadDir(beside)
+	must(t, err)
+	check(t, len(entries) == 0, "refused launch left its directory: %v", entries)
+}
+
+// Only the launch directory travels through Grok. The facts file is read as bytes, so a
+// working directory, name or socket that is not UTF-8 reaches the helper as written.
+func TestLaunchFactsReachTheHelperByteForByte(t *testing.T) {
+	root := testsocket.Directory(t)
+	socket, work, name := filepath.Join(root, "bus\xfe"), filepath.Join(root, "work\xff"), "name\xfd $HOME"
+	launch, err := os.MkdirTemp(root, "grok-launch-")
+	must(t, err)
+	must(t, writeLaunchFacts(launch, socket, `["team\u00e9"]`, name, work))
+	_, facts, managed := managedLaunch(managedPeerEnv(nil, testSessionID, launch))
+	check(t, managed && facts.Socket == socket && facts.Cwd == work && facts.Name == name && slices.Equal(facts.Groups, []string{"team\u00e9"}), "facts read by the helper = %q managed=%t", facts, managed)
+
+	// The helper starts its observer in that directory and reaches the bus at that
+	// socket. No name is requested here: native's JSON cannot return such a title.
+	t.Run("observer in that directory", func(t *testing.T) {
+		if err := os.Mkdir(work, 0o700); err != nil {
+			t.Skipf("filesystem rejects a name that is not UTF-8: %v", err)
+		}
+		must(t, writeLaunchFacts(launch, socket, "[]", "", work))
+		server, hellos := fakeDaemon(t, socket)
+		defer server.Close()
+		t.Setenv(host.SocketEnv, "")
+		t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+		t.Setenv("GROK_TEST_CWD", root)
+		backend, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, launch))
+		must(t, err)
+		defer backend.Shutdown()
+		backend.mu.Lock()
+		observerDirectory := backend.cwd
+		backend.mu.Unlock()
+		check(t, observerDirectory == work, "observer directory = %q", observerDirectory)
+		backend.Initialized()
+		admitted := awaitHello(t, hellos)
+		check(t, admitted.SessionID == testSessionID, "published identity = %+v", admitted)
+		admitted.ack <- true
+		awaitChannel(t, backend.ready, "Grok peer admission")
+	})
+}
+
+func TestRelativeBusSocketIsAbsoluteInLaunchFacts(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+	registeredGrokHome(t)
+	tuiPID, release := filepath.Join(root, "tui.pid"), filepath.Join(root, "release")
+	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPID)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", release)
+	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
+	// The launcher resolves the relative socket where it runs.
+	t.Chdir(root)
+	t.Setenv(host.SocketEnv, filepath.Join("relative", "bus"))
+	absolute := filepath.Join(root, "relative", "bus")
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID}, os.Environ())
+	must(t, err)
+	done := make(chan error, 1)
+	go func() { done <- RunInteractive(context.Background(), plan) }()
+	tuiPidfd := interactivePidfd(t, tuiPID)
+	defer closeProcessHandle(tuiPidfd)
+	var start struct {
+		Kind  string `json:"kind"`
+		Value struct {
+			Environment map[string]string `json:"environment"`
+		} `json:"value"`
+	}
+	must(t, json.Unmarshal(records(t, recordPath)[0], &start))
+	marker := start.Value.Environment[ManagedEnv]
+	info, err := os.Lstat(marker)
+	check(t, start.Kind == "START" && filepath.IsAbs(marker) && err == nil && info.IsDir() && filepath.Dir(marker) == filepath.Dir(absolute), "TUI managed marker = %q (%v)", marker, err)
+	// The helper runs under Grok's leader, in another directory and with the empty socket
+	// its registration gives it. It reads the launch's absolute socket from the facts file
+	// and applies it to its own environment, where the kit resolves it.
+	t.Chdir(t.TempDir())
+	t.Setenv(host.SocketEnv, "")
+	env := managedPeerEnv(os.Environ(), testSessionID, marker)
+	_, facts, managed := managedLaunch(env)
+	check(t, managed && facts.Socket == absolute && facts.Cwd == root, "facts of a launch with a relative bus socket = %+v managed=%t", facts, managed)
+	server, hellos := fakeDaemon(t, absolute)
+	defer server.Close()
+	backend, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	check(t, os.Getenv(host.SocketEnv) == absolute && sessionkit.Socket() == absolute, "helper bus socket = %q, kit resolves %q", os.Getenv(host.SocketEnv), sessionkit.Socket())
+	backend.Initialized()
+	admitted := awaitHello(t, hellos)
+	check(t, admitted.SessionID == testSessionID, "published identity = %+v", admitted)
+	admitted.ack <- true
+	awaitChannel(t, backend.ready, "Grok peer admission")
+	backend.Shutdown()
+	must(t, os.WriteFile(release, nil, 0o600))
+	var exited *exec.ExitError
+	check(t, errors.As(<-done, &exited) && exited.ExitCode() == 7, "launcher result was not the TUI's")
+	check(t, !exists(marker), "launch directory survived the launcher")
 }
 
 func TestNativeTitleEventsRefreshPeerWithoutDelivery(t *testing.T) {
@@ -323,9 +452,9 @@ func liveLaunch(t *testing.T, facts launchFacts) string {
 	if facts.Cwd == "" {
 		facts.Cwd = filepath.Dir(facts.Socket)
 	}
-	body, err := json.Marshal(facts)
+	groups, err := json.Marshal(facts.Groups)
 	must(t, err)
-	must(t, os.WriteFile(filepath.Join(launch, launchFactsFile), body, 0o600))
+	must(t, writeLaunchFacts(launch, facts.Socket, string(groups), facts.Name, facts.Cwd))
 	return launch
 }
 
@@ -613,12 +742,8 @@ func TestInteractiveLauncherStartsOnlyTheTUIOnGroksLeader(t *testing.T) {
 	check(t, len(states) == 1 && states[0].directory != "", "launcher built %d native commands: %+v", len(states), states)
 	state := states[0]
 	check(t, state.mode.IsDir() && state.mode.Perm() == 0o700 && state.factsMode.IsRegular() && state.factsMode.Perm() == 0o600, "launch state is not private: directory %v, facts %v", state.mode, state.factsMode)
-	var fields map[string]json.RawMessage
-	must(t, json.Unmarshal(state.facts, &fields))
-	check(t, len(fields) == 4 && fields["socket"] != nil && fields["groups"] != nil && fields["name"] != nil && fields["cwd"] != nil, "facts written before native start = %s", state.facts)
-	var facts launchFacts
-	must(t, json.Unmarshal(state.facts, &facts))
-	check(t, reflect.DeepEqual(facts, launchFacts{Socket: socket, Groups: []string{"team", "review$HOME"}, Name: "initial ${SESSIONBUS_SESSION_NAME}", Cwd: root}), "facts = %+v", facts)
+	// Four fields in a fixed order, one NUL between them, each as it is.
+	check(t, string(state.facts) == socket+"\x00"+`["team","review$HOME"]`+"\x00"+"initial ${SESSIONBUS_SESSION_NAME}"+"\x00"+root, "facts written before native start = %q", state.facts)
 	frames := records(t, recordPath)
 	check(t, len(frames) == 1, "launcher started more than the TUI: %s", frames)
 	var start struct {

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
 	"github.com/sessionbus/peer-common/host"
@@ -40,13 +41,34 @@ const grokLeaderSocketEnv = "GROK_LEADER_SOCKET"
 // launchFactsFile is the one file a managed launch writes into its launch directory
 // before native starts. The helper's registration carries only that directory, so the
 // helper takes what the launch asked for from this file, never from its environment.
-const launchFactsFile = "launch.json"
+// It holds four fields in this order, separated by one NUL byte and otherwise as they
+// are: bus socket, groups as their JSON array text, requested name, working directory.
+const launchFactsFile = "launch.facts"
 
 type launchFacts struct {
-	Socket string   `json:"socket"`
-	Groups []string `json:"groups"`
-	Name   string   `json:"name"`
-	Cwd    string   `json:"cwd"`
+	Socket string
+	Groups []string
+	Name   string
+	Cwd    string
+}
+
+func writeLaunchFacts(directory, socket, groups, name, cwd string) error {
+	return os.WriteFile(filepath.Join(directory, launchFactsFile), []byte(strings.Join([]string{socket, groups, name, cwd}, "\x00")), 0600)
+}
+
+// readLaunchFacts accepts only whole facts: exactly four fields, an absolute bus
+// socket and working directory, and groups that decode as a JSON array of strings.
+func readLaunchFacts(directory string) (launchFacts, bool) {
+	body, err := os.ReadFile(filepath.Join(directory, launchFactsFile))
+	fields := strings.Split(string(body), "\x00")
+	if err != nil || len(fields) != 4 || !filepath.IsAbs(fields[0]) || !filepath.IsAbs(fields[3]) {
+		return launchFacts{}, false
+	}
+	var groups []string
+	if json.Unmarshal([]byte(fields[1]), &groups) != nil || groups == nil {
+		return launchFacts{}, false
+	}
+	return launchFacts{Socket: fields[0], Groups: groups, Name: fields[2], Cwd: fields[3]}, true
 }
 
 func startPeerClient(lifetimeCtx, requestCtx context.Context, cwd string, notify func(acpFrame)) (*acpClient, *nativeProcess, error) {
@@ -73,11 +95,10 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 	if err != nil {
 		return err
 	}
-	groups := []string{}
-	if raw := environmentValue(plan.Env, host.GroupsEnv); raw != "" {
-		if json.Unmarshal([]byte(raw), &groups) != nil || groups == nil {
-			return errors.New("SESSIONBUS_GROUPS must be a JSON array")
-		}
+	groups := first(environmentValue(plan.Env, host.GroupsEnv), "[]")
+	var list []string
+	if json.Unmarshal([]byte(groups), &list) != nil || list == nil {
+		return errors.New("SESSIONBUS_GROUPS must be a JSON array")
 	}
 	if err = ensureManagedConfig(plan.Env, cwd); err != nil {
 		return err
@@ -96,11 +117,10 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 	if strings.Contains(runtime, "$") {
 		return fmt.Errorf("managed launch directory %s contains \"$\", which Grok would expand in the Sessionbus helper registration; use a Sessionbus socket directory without it", runtime)
 	}
-	facts, err := json.Marshal(launchFacts{Socket: socket, Groups: groups, Name: environmentValue(plan.Env, host.NameEnv), Cwd: cwd})
-	if err != nil {
-		return err
+	if !utf8.ValidString(runtime) {
+		return fmt.Errorf("managed launch directory %q is not valid UTF-8, which Grok cannot pass on in the Sessionbus helper registration; use a Sessionbus socket directory with a UTF-8 path", runtime)
 	}
-	if err = os.WriteFile(filepath.Join(runtime, launchFactsFile), facts, 0600); err != nil {
+	if err = writeLaunchFacts(runtime, socket, groups, environmentValue(plan.Env, host.NameEnv), cwd); err != nil {
 		return err
 	}
 	// A leader this TUI starts inherits its environment; the facts file carries these values.
@@ -224,6 +244,10 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 	native := make([]string, 0, len(arguments))
 	groups := []string{}
 	name := ""
+	// A refusal is decided where this pass reads a flag. A token it steps over as an
+	// option's required value is that option's value, whatever it spells.
+	headless := ""
+	var conflict error
 	for i := 0; i < len(arguments); i++ {
 		arg := arguments[i]
 		if arg == "--" {
@@ -258,9 +282,21 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 			}
 		default:
 			native = append(native, arg)
+			valued := attached
 			if !attached && grokOptionTakesValue(key) && i+1 < len(arguments) && arguments[i+1] != "--" {
 				i++
-				native = append(native, arguments[i])
+				value, valued = arguments[i], true
+				native = append(native, value)
+			}
+			if grokHeadless(arg, key) {
+				headless = first(headless, key)
+			} else if conflict == nil && slices.Contains([]string{"--leader", "--no-leader", "--leader-socket"}, key) {
+				conflict = errors.New("grok-peer selects Grok's own leader; caller leader selection conflicts")
+			} else if conflict == nil && key == "--sandbox" && valued && value != "" && value != "off" && value != "none" {
+				// Native reads the exact values off and none as no sandbox and an empty
+				// value as no override; any other value, a custom profile name included,
+				// confines the session. A missing value is left to native.
+				conflict = fmt.Errorf("--sandbox %q makes Grok run the session without a leader, so it cannot be on Sessionbus; start a sandboxed session with plain grok", value)
 			}
 		}
 	}
@@ -271,27 +307,11 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 	if grokPassthrough(native) {
 		return host.ExecPlan{Path: "grok", Args: native, Env: env}, nil
 	}
-	if flag := grokHeadless(native); flag != "" {
-		return host.ExecPlan{}, fmt.Errorf("%s is headless; use a Sessionbus Grok lane", flag)
+	if headless != "" {
+		return host.ExecPlan{}, fmt.Errorf("%s is headless; use a Sessionbus Grok lane", headless)
 	}
-	for i, arg := range native {
-		if arg == "--" {
-			break
-		}
-		key, value, attached := strings.Cut(arg, "=")
-		if slices.Contains([]string{"--leader", "--no-leader", "--leader-socket"}, key) {
-			return host.ExecPlan{}, errors.New("grok-peer selects Grok's own leader; caller leader selection conflicts")
-		}
-		if key == "--sandbox" {
-			if !attached && i+1 < len(native) {
-				value = native[i+1]
-			}
-			// Native reads only the exact values off and none as no sandbox; any
-			// other value, a custom profile name included, confines the session.
-			if value != "off" && value != "none" {
-				return host.ExecPlan{}, fmt.Errorf("--sandbox %q makes Grok run the session without a leader, so it cannot be on Sessionbus; start a sandboxed session with plain grok", value)
-			}
-		}
+	if conflict != nil {
+		return host.ExecPlan{}, conflict
 	}
 	raw, _ := json.Marshal(groups)
 	env = setEnvironment(env, host.GroupsEnv, string(raw))
@@ -329,17 +349,9 @@ func nativeOption(arguments []string, target string) string {
 	return value
 }
 
-func grokHeadless(arguments []string) string {
-	for _, arg := range arguments {
-		if arg == "--" {
-			break
-		}
-		key, _, _ := strings.Cut(arg, "=")
-		if slices.Contains([]string{"-p", "--single", "--prompt-file", "--prompt-json", "--output-format", "--json-schema", "--max-turns", "--include-partial-messages", "--print", "--memory-flush"}, key) || strings.HasPrefix(arg, "-p") && !strings.HasPrefix(arg, "--") {
-			return key
-		}
-	}
-	return ""
+// grokHeadless reports a headless flag; arg stands where InteractivePlan reads a flag.
+func grokHeadless(arg, key string) bool {
+	return slices.Contains([]string{"-p", "--single", "--prompt-file", "--prompt-json", "--output-format", "--json-schema", "--max-turns", "--include-partial-messages", "--print", "--memory-flush"}, key) || strings.HasPrefix(arg, "-p") && !strings.HasPrefix(arg, "--")
 }
 
 var grokCommands = map[string]bool{
@@ -368,12 +380,10 @@ func grokPassthrough(arguments []string) bool {
 }
 
 // managedLaunch resolves a helper's managed launch: the marker is an absolute path that
-// is positively a directory, the facts file in it reads and decodes, and native gave the
-// helper a session id. Decoded facts hold the group list and an absolute bus socket and
-// working directory. Anything else leaves the helper inert: the unexpanded reference
+// is positively a directory, the facts file in it reads whole, and native gave the
+// helper a session id. Anything else leaves the helper inert: the unexpanded reference
 // a plain Grok client hands on, a relative path, a regular file or any stat error.
 func managedLaunch(environment []string) (string, launchFacts, bool) {
-	var facts launchFacts
 	marker := environmentValue(environment, ManagedEnv)
 	if !filepath.IsAbs(marker) || environmentValue(environment, grokSessionIDEnv) == "" {
 		return "", launchFacts{}, false
@@ -381,8 +391,8 @@ func managedLaunch(environment []string) (string, launchFacts, bool) {
 	if info, err := os.Lstat(marker); err != nil || !info.IsDir() {
 		return "", launchFacts{}, false
 	}
-	body, err := os.ReadFile(filepath.Join(marker, launchFactsFile))
-	if err != nil || json.Unmarshal(body, &facts) != nil || facts.Groups == nil || !filepath.IsAbs(facts.Socket) || !filepath.IsAbs(facts.Cwd) {
+	facts, whole := readLaunchFacts(marker)
+	if !whole {
 		return "", launchFacts{}, false
 	}
 	return marker, facts, true

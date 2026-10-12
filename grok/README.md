@@ -49,7 +49,8 @@ with that and are rejected. Headless flags, including `--print` and
 `--memory-flush`, are rejected: use Sessionbus lanes for headless model work.
 A `--sandbox` value that confines is rejected, because Grok then runs the
 session without a leader and it cannot be on the bus; start a sandboxed session
-with plain `grok`. Only the exact values `off` and `none` are passed on.
+with plain `grok`. The exact values `off` and `none` and an empty value are
+passed on, and a `--sandbox` without a value is left to Grok.
 
 Native `--resume`/`--continue`/session selectors remain native. Bare `--resume`
 uses Grok's native behavior (retained help says most recent), without a wrapper
@@ -59,9 +60,11 @@ session; later `/new` sessions keep their native names. Renaming happens after
 MCP initialization and must be confirmed natively. If Grok replaces that helper
 before the name is confirmed, the next helper of the same session applies it,
 and requests nothing when the session already shows that title; until then it
-can overwrite a title set in between. Failed naming does not transfer to later
-sessions. Blank native names stay blank; native title events update the same
-bus owner.
+can overwrite a title set in between. When the completion mark cannot be
+written, a later helper of the same session may request the name again over a
+title changed since; that can happen at any time while that launch lives, not
+only at startup. Failed naming does not transfer to later sessions. Blank
+native names stay blank; native title events update the same bus owner.
 
 Before a managed interactive or lane launch, the wrapper idempotently ensures
 one exact global Grok permission rule for
@@ -81,8 +84,9 @@ A lane retains the exact `--allow` projection on its private leader for
 compatibility, although public Grok 1.0.13 through 1.0.38 do not forward those
 top-level rules into leader sessions. Interactive caller allow, deny,
 permission-mode and bypass controls reach the TUI with their bytes and order.
-Caller `--allow` and `--deny` have no effect in Grok's leader mode, and the
-wrapper does not check them; permission rules belong in Grok's config.
+Grok does not apply `--allow` and `--deny` given on the command line in leader
+mode (Grok's own behaviour per its 1.0.35 source; observed for one rule on Grok
+1.0.52); grok-peer passes them on unchanged; rules belong in Grok's config.
 `--yolo`/`--always-approve` and the config grant coexist. Help, version, and
 native subcommand passthrough do not touch the config.
 
@@ -96,7 +100,12 @@ directory. Managed activation requires that this is the directory of a live
 `grok-peer` launch, holding the facts file the launcher wrote before it started
 Grok (bus socket, groups, requested name, working directory), and native
 `GROK_SESSION_ID`. The launch directory is created beside the bus socket; a
-managed launch refuses when that path contains `$`, which Grok would expand.
+managed launch refuses when that path contains `$`, which Grok would expand, or
+is not valid UTF-8, which Grok cannot pass on. Both restrict only where the
+Sessionbus socket lives, its runtime directory. The launcher refuses nothing
+about the session name, the groups or the working directory: the name and the
+working directory reach the helper byte for byte, and groups travel as the JSON
+list they are today.
 
 Grok's own leader outlasts a launch and serves other Grok clients as well. The
 wrapper prevents none of the following:

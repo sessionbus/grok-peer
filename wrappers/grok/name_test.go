@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -145,26 +144,71 @@ func TestEqualNativeTitleCompletesInitialNameWithoutRename(t *testing.T) {
 	check(t, countFrames(records(t, recordPath), "_x.ai/session/rename") == 0, "equal title was requested again")
 }
 
-// A claim the helper cannot read, or cannot mark completed, is an error of the helper:
-// it does not guess the name's state and it publishes nothing.
-func TestUnreadableInitialNameClaimStopsTheHelper(t *testing.T) {
-	root := testsocket.Directory(t)
-	socket := filepath.Join(root, "bus")
-	recordPath := filepath.Join(root, "record")
-	t.Setenv(host.SocketEnv, socket)
-	t.Setenv("GROK_TEST_RECORD", recordPath)
-	launch := liveLaunch(t, launchFacts{Socket: socket, Name: "requested"})
-	// The claim exists and cannot be read as a file.
-	must(t, os.Mkdir(filepath.Join(launch, initialNameClaim), 0o700))
-	b, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, launch))
-	if err == nil {
-		b.Shutdown()
-		t.Fatal("helper started over an unreadable name claim")
+// helperStderr sends os.Stderr, where the helper writes its notices, to a file until the
+// test ends, and returns a reader of what has been written so far.
+func helperStderr(t *testing.T) func() string {
+	t.Helper()
+	file, err := os.Create(filepath.Join(t.TempDir(), "stderr"))
+	must(t, err)
+	previous := os.Stderr
+	os.Stderr = file
+	t.Cleanup(func() {
+		os.Stderr = previous
+		_ = file.Close()
+	})
+	return func() string {
+		body, err := os.ReadFile(file.Name())
+		must(t, err)
+		return string(body)
 	}
-	check(t, len(records(t, recordPath)) == 0, "helper started native over an unreadable name claim")
 }
 
-func TestInitialNameCompletionFailureStopsPublication(t *testing.T) {
+// A claim that cannot be taken, read or interpreted costs this helper the name, never the
+// session's presence: it requests nothing, says so once and publishes the native title.
+func TestUnusableInitialNameClaimCostsTheNameNotThePresence(t *testing.T) {
+	for name, spoil := range map[string]func(t *testing.T, launch string){
+		"unreadable claim": func(t *testing.T, launch string) {
+			must(t, os.Mkdir(filepath.Join(launch, initialNameClaim), 0o700))
+		},
+		"uninterpretable claim": func(t *testing.T, launch string) {
+			must(t, os.WriteFile(filepath.Join(launch, initialNameClaim), []byte(testSessionID), 0o600))
+		},
+		"launch directory not private": func(t *testing.T, launch string) {
+			must(t, os.Chmod(launch, 0o755))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := testsocket.Directory(t)
+			socket := filepath.Join(root, "bus")
+			recordPath := filepath.Join(root, "record")
+			server, hellos := fakeDaemon(t, socket)
+			defer server.Close()
+			t.Setenv(host.SocketEnv, socket)
+			t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+			t.Setenv("GROK_TEST_RECORD", recordPath)
+			t.Setenv("GROK_TEST_TITLES", "native-title")
+			launch := liveLaunch(t, launchFacts{Socket: socket, Name: "requested"})
+			spoil(t, launch)
+			stderr := helperStderr(t)
+			b, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, launch))
+			must(t, err)
+			defer b.Shutdown()
+			check(t, b.initialName == "", "helper took a name from an unusable claim")
+			b.Initialized()
+			published := awaitHello(t, hellos)
+			check(t, published.SessionID == testSessionID && published.Name == "native-title", "published %+v", published)
+			published.ack <- true
+			awaitChannel(t, b.ready, "Grok peer admission")
+			check(t, countFrames(records(t, recordPath), "_x.ai/session/rename") == 0, "name was requested over an unusable claim")
+			notice := stderr()
+			check(t, strings.Count(notice, "\n") == 1 && strings.HasPrefix(notice, "sessionbus: Grok helper: initial name not requested: "), "helper stderr = %q", notice)
+		})
+	}
+}
+
+// The name is applied and confirmed, and its completion cannot be recorded: the helper
+// publishes, and the claim stays unfinished for a later helper of the same session.
+func TestInitialNameCompletionFailureStillPublishes(t *testing.T) {
 	root := testsocket.Directory(t)
 	socket := filepath.Join(root, "bus")
 	recordPath := filepath.Join(root, "record")
@@ -174,23 +218,98 @@ func TestInitialNameCompletionFailureStopsPublication(t *testing.T) {
 	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
 	t.Setenv("GROK_TEST_RECORD", recordPath)
 	launch := liveLaunch(t, launchFacts{Socket: socket, Name: "requested"})
-	b, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, launch))
+	claim := filepath.Join(launch, initialNameClaim)
+	env := managedPeerEnv(os.Environ(), testSessionID, launch)
+	stderr := helperStderr(t)
+	b, err := NewPeerBackend(context.Background(), env)
 	must(t, err)
 	defer b.Shutdown()
-	// The claim is gone when the confirmed name is to be recorded.
-	must(t, os.Remove(filepath.Join(launch, initialNameClaim)))
+	must(t, os.Chmod(claim, 0o400))
+	if probe, err := os.OpenFile(claim, os.O_APPEND|os.O_WRONLY, 0); err == nil {
+		_ = probe.Close()
+		t.Skip("file modes do not restrict this user")
+	}
 	b.Initialized()
-	awaitChannel(t, b.done, "Grok helper end")
-	b.mu.Lock()
-	terminal := b.err
-	b.mu.Unlock()
-	check(t, errors.Is(terminal, os.ErrNotExist), "helper result without a recordable claim = %v", terminal)
-	check(t, countFrames(records(t, recordPath), "_x.ai/session/rename") == 1, "name was not requested before its completion failed")
+	named := awaitHello(t, hellos)
+	check(t, named.SessionID == testSessionID && named.Name == "requested", "published %+v", named)
+	named.ack <- true
+	awaitChannel(t, b.ready, "Grok peer admission")
+	owner, err := os.ReadFile(claim)
+	must(t, err)
+	check(t, string(owner) == testSessionID+"\n" && countFrames(records(t, recordPath), "_x.ai/session/rename") == 1, "claim after a failed completion = %q", owner)
+	notice := stderr()
+	check(t, strings.Count(notice, "\n") == 1 && strings.HasPrefix(notice, "sessionbus: Grok helper: initial name claim not completed: "), "helper stderr = %q", notice)
+	successor, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	defer successor.Shutdown()
+	check(t, successor.initialName == "requested", "unfinished claim was not left to the same session")
+}
+
+// A rename which native answers without success is a failed rename: the helper ends
+// as before and publishes nothing. Its claim stays unfinished, so the next helper of the
+// same session requests the name again; no other session does, and nobody once it is
+// confirmed.
+func TestFailedInitialRenameLeavesClaimForSameSessionSuccessor(t *testing.T) {
+	root := testsocket.Directory(t)
+	socket := filepath.Join(root, "bus")
+	recordPath := filepath.Join(root, "record")
+	server, hellos := fakeDaemon(t, socket)
+	defer func() { _ = server.Close() }()
+	t.Setenv(host.SocketEnv, socket)
+	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	launch := liveLaunch(t, launchFacts{Socket: socket, Name: "requested"})
+	claim := filepath.Join(launch, initialNameClaim)
+	env := managedPeerEnv(os.Environ(), testSessionID, launch)
+	t.Setenv("GROK_TEST_RENAME_UNSUCCESSFUL", "1")
+	failed, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	failed.Initialized()
+	awaitChannel(t, failed.done, "failed helper end")
+	failed.mu.Lock()
+	terminal := failed.err
+	failed.mu.Unlock()
+	check(t, terminal != nil && strings.Contains(terminal.Error(), "native initial rename failed"), "helper result after an unsuccessful rename = %v", terminal)
 	select {
 	case published := <-hellos:
-		t.Fatalf("helper published without recording its name claim: %+v", published)
+		t.Fatalf("helper published after an unsuccessful rename: %+v", published)
 	default:
 	}
+	failed.Shutdown()
+	owner, err := os.ReadFile(claim)
+	must(t, err)
+	check(t, string(owner) == testSessionID+"\n" && countFrames(records(t, recordPath), "_x.ai/session/rename") == 1, "unsuccessful rename left claim %q", owner)
+	other, err := NewPeerBackend(context.Background(), setEnvironment(env, grokSessionIDEnv, "second-native-id"))
+	must(t, err)
+	check(t, other.initialName == "", "failed rename transferred to another session")
+	other.Shutdown()
+
+	// Native applies the same session's next request.
+	t.Setenv("GROK_TEST_RENAME_UNSUCCESSFUL", "")
+	successor, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	check(t, successor.initialName == "requested", "same-session successor did not take over the failed rename's claim")
+	successor.Initialized()
+	named := awaitHello(t, hellos)
+	check(t, named.SessionID == testSessionID && named.Name == "requested", "successor published %+v", named)
+	named.ack <- true
+	awaitChannel(t, successor.ready, "successor admission")
+	owner, err = os.ReadFile(claim)
+	must(t, err)
+	check(t, string(owner) == testSessionID+"\ncompleted\n" && countFrames(records(t, recordPath), "_x.ai/session/rename") == 2, "confirmed name left claim %q", owner)
+	successor.Shutdown()
+	must(t, server.Close())
+
+	server, hellos = fakeDaemon(t, socket)
+	restarted, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	defer restarted.Shutdown()
+	check(t, restarted.initialName == "", "completed claim was taken again")
+	restarted.Initialized()
+	later := awaitHello(t, hellos)
+	later.ack <- true
+	awaitChannel(t, restarted.ready, "restarted admission")
+	check(t, countFrames(records(t, recordPath), "_x.ai/session/rename") == 2, "restarted helper requested the name again")
 }
 
 func TestUnconfirmedInitialTitleLeavesClaimUnfinished(t *testing.T) {

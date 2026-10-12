@@ -32,22 +32,19 @@ func TestLaneModeRejectsArguments(t *testing.T) {
 }
 
 // launchDirectory writes a managed launch's directory as the launcher does: private,
-// holding the facts file with its four fields.
+// holding the facts file with its four fields: bus socket, groups as JSON array text,
+// requested name and working directory, one NUL byte between them.
 func launchDirectory(t *testing.T, path, bus string) {
 	t.Helper()
-	launchDirectoryWith(t, path, map[string]any{"socket": bus, "groups": []string{}, "name": "", "cwd": filepath.Dir(path)})
+	launchDirectoryWith(t, path, bus, "[]", "", filepath.Dir(path))
 }
 
-func launchDirectoryWith(t *testing.T, path string, fields map[string]any) {
+func launchDirectoryWith(t *testing.T, path string, fields ...string) {
 	t.Helper()
-	facts, err := json.Marshal(fields)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, "launch.json"), facts, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "launch.facts"), []byte(strings.Join(fields, "\x00")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -65,16 +62,11 @@ func TestManagedHelperRequiresLiveLaunchDirectoryWithFacts(t *testing.T) {
 	for _, name := range []string{"grok-launch-live", "${SESSIONBUS_GROK_MANAGED}"} {
 		launchDirectory(t, filepath.Join(root, name), filepath.Join(root, "bus"))
 	}
-	regular, bare, undecoded := filepath.Join(root, "regular"), filepath.Join(root, "grok-launch-bare"), filepath.Join(root, "grok-launch-undecoded")
+	regular, bare := filepath.Join(root, "regular"), filepath.Join(root, "grok-launch-bare")
 	if err := os.WriteFile(regular, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, directory := range []string{bare, undecoded} {
-		if err := os.Mkdir(directory, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(undecoded, "launch.json"), []byte("{"), 0o600); err != nil {
+	if err := os.Mkdir(bare, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	inert := map[string][]string{
@@ -85,23 +77,28 @@ func TestManagedHelperRequiresLiveLaunchDirectoryWithFacts(t *testing.T) {
 		"regular file":            {"SESSIONBUS_GROK_MANAGED=" + regular, "GROK_SESSION_ID=native"},
 		"missing directory":       {"SESSIONBUS_GROK_MANAGED=" + filepath.Join(root, "grok-launch-gone"), "GROK_SESSION_ID=native"},
 		"directory without facts": {"SESSIONBUS_GROK_MANAGED=" + bare, "GROK_SESSION_ID=native"},
-		"undecodable facts":       {"SESSIONBUS_GROK_MANAGED=" + undecoded, "GROK_SESSION_ID=native"},
 		"no native session":       {"SESSIONBUS_GROK_MANAGED=" + live},
 		"empty native session":    {"SESSIONBUS_GROK_MANAGED=" + live, "GROK_SESSION_ID="},
 	}
-	// Facts count only whole: the group list, and an absolute bus socket and working directory.
+	// Facts count only whole: exactly four fields, an absolute bus socket and working
+	// directory, and groups which are a JSON array of strings.
 	bus := filepath.Join(root, "bus")
-	for name, fields := range map[string]map[string]any{
-		"facts without groups":         {"socket": bus, "name": "", "cwd": root},
-		"facts with a relative cwd":    {"socket": bus, "groups": []string{}, "name": "", "cwd": "work"},
-		"facts with an empty cwd":      {"socket": bus, "groups": []string{}, "name": "", "cwd": ""},
-		"facts without cwd":            {"socket": bus, "groups": []string{}, "name": ""},
-		"facts with a relative socket": {"socket": "bus", "groups": []string{}, "name": "", "cwd": root},
-		"facts with an empty socket":   {"socket": "", "groups": []string{}, "name": "", "cwd": root},
-		"facts without socket":         {"groups": []string{}, "name": "", "cwd": root},
+	for name, fields := range map[string][]string{
+		"three fields":                 {bus, "[]", root},
+		"five fields":                  {bus, "[]", "", root, ""},
+		"facts as one JSON object":     {`{"socket":"` + bus + `","groups":[],"name":"","cwd":"` + root + `"}`},
+		"empty facts":                  {""},
+		"facts with a relative cwd":    {bus, "[]", "", "work"},
+		"facts with an empty cwd":      {bus, "[]", "", ""},
+		"facts with a relative socket": {"bus", "[]", "", root},
+		"facts with an empty socket":   {"", "[]", "", root},
+		"groups without text":          {bus, "", "", root},
+		"groups null":                  {bus, "null", "", root},
+		"groups not an array":          {bus, `{"team":true}`, "", root},
+		"groups not strings":           {bus, "[1]", "", root},
 	} {
 		directory := filepath.Join(root, "grok-launch-"+strings.ReplaceAll(name, " ", "-"))
-		launchDirectoryWith(t, directory, fields)
+		launchDirectoryWith(t, directory, fields...)
 		inert[name] = []string{"SESSIONBUS_GROK_MANAGED=" + directory, "GROK_SESSION_ID=native"}
 	}
 	for name, env := range inert {
@@ -246,7 +243,7 @@ func TestLaneSocketSelectsTheForwarderOverALiveManagedLaunch(t *testing.T) {
 	}()
 	// A managed backend would claim this launch's requested name as soon as it is built.
 	launch := filepath.Join(t.TempDir(), "grok-launch-1")
-	launchDirectoryWith(t, launch, map[string]any{"socket": filepath.Join(root, "bus"), "groups": []string{}, "name": "requested", "cwd": root})
+	launchDirectoryWith(t, launch, filepath.Join(root, "bus"), "[]", "requested", root)
 	t.Setenv("GROK_LEADER_SOCKET", leader)
 	_, _, done := managedEntry(t, launch, "", lane)
 	select {
