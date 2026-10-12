@@ -16,9 +16,9 @@ daemon v0.5.7 seeds a managed Run. Interactive Grok keeps its native interject
 carrier in both states. See
 [the all-product boundary](../designs/mandatory-message-wake-20260921/NATIVE-BOUNDARIES.md).
 
-The rewrite starts at peers eb727701 and retains the native evidence below as historical knowledge. Current implementation and installation are described in [Grok README](../../grok/README.md) and the [implementation contract](../designs/grok-0.5.0/CONTRACT.md), with activation, naming and delivery amendments alongside it. The source boundary below observed native Grok 1.0.34 in the real permanent UMKA installation.
+The rewrite starts at peers eb727701 and retains the native evidence below as historical knowledge. Current implementation and installation are described in [Grok README](../../grok/README.md). The 0.5.0 [implementation contract](../designs/grok-0.5.0/CONTRACT.md), with activation, naming and delivery amendments alongside it, is the design record; the interactive activation described there is superseded by the 2026-10-12 move to Grok's own leader. The source boundary below observed native Grok 1.0.34 in the real permanent UMKA installation.
 
-Current behavior supersedes historical wrapper choices below: no generated native IDs or native selector resolver; repeated mixed -g/--group before --; no session lock, reconnect loop, broad server-wildcard permission grant or forced autoMode; native titles including empty names update the same owner connection. Managed launches maintain only the exact `MCPTool(sessionbus__sessionbus)` global permission grant. The private MCP alias shares one Go binary with launcher and lane, and only the generic Sessionbus skill is installed. Ordinary Grok still discovers that global plugin and starts its inert, zero-tool helper because native leader mode rejects per-launch plugin-dir.
+Current behavior supersedes historical wrapper choices below: no generated native IDs or native selector resolver; repeated mixed -g/--group before --; no session lock, reconnect loop, broad server-wildcard permission grant or forced autoMode; native titles including empty names update the same owner connection. Managed launches maintain only the exact `MCPTool(sessionbus__sessionbus)` global permission grant. The private MCP alias shares one Go binary with launcher and lane, and only the generic Sessionbus skill is installed. Ordinary Grok still discovers that global plugin because native leader mode rejects per-launch plugin-dir. Since 2026-10-12 a managed interactive session runs on Grok's own leader: the launcher starts only `grok --leader`, the plugin defines no helper, and the installer registers the helper in the user's Grok config, so ordinary Grok starts it there as an inert, zero-tool helper.
 
 The shared Worker owns message-seeded runs and nonconsuming result cursors with
 explicit ack. Persistence means owner-exit lifetime, not durable storage. Idle
@@ -80,16 +80,15 @@ identity and byte comparison refuses a detected concurrent in-place native
 edit, without claiming that the advisory lock eliminates every native writer
 race. Help, version and native subcommand passthrough remain read-only.
 
-The existing private-leader `--allow MCPTool(sessionbus__sessionbus)` argv is
+The lane's private-leader `--allow MCPTool(sessionbus__sessionbus)` argv is
 retained as a compatibility projection but is inert in the bracketed public
 versions. Interactive caller allow/deny, permission mode and bypass controls
-retain native ownership; the wrapper still rejects a caller deny which the
-bridged native parser and Rust glob semantics apply to the managed tool before
-the persistent ensure. Empty comma members remain tool-wide denies, ASCII
-matching is case-insensitive, Unicode ranges retain rune semantics, invalid
-glob patterns remain nonmatches, and `--disallowed-tools` is not the separate
-MCP deny alias `--disallowedTools`. A future launch-scoped replacement is
-tracked in peers issue 55.
+retain native ownership and reach the TUI unchanged. Since 2026-10-12 the
+wrapper no longer checks a caller deny against the managed tool: the
+interactive session runs on Grok's own leader, and rules belong in Grok's
+config. The Grok 1.0.35 source lists caller `--allow` and `--deny` as
+unsupported for a leader client; on Grok 1.0.52 one deny rule was observed not
+to deny. A future launch-scoped replacement is tracked in peers issue 55.
 
 Installed acceptance on UMKA used signed source
 `e26da0b885126589d30ff5ac715b3b214fc33c97` and native Grok 1.0.34. The first

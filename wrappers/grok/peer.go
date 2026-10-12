@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
 	"github.com/sessionbus/peer-common/host"
@@ -37,8 +38,41 @@ const ManagedEnv = "SESSIONBUS_GROK_MANAGED"
 const grokSessionIDEnv = "GROK_SESSION_ID"
 const grokLeaderSocketEnv = "GROK_LEADER_SOCKET"
 
-func startPeerClient(lifetimeCtx, requestCtx context.Context, leaderPath, cwd string, notify func(acpFrame)) (*acpClient, *nativeProcess, error) {
-	cmd := command("grok", "--leader-socket", leaderPath, "agent", "--leader", "stdio")
+// launchFactsFile is the one file a managed launch writes into its launch directory
+// before native starts. The helper's registration carries only that directory, so the
+// helper takes what the launch asked for from this file, never from its environment.
+// It holds four fields in this order, separated by one NUL byte and otherwise as they
+// are: bus socket, groups as their JSON array text, requested name, working directory.
+const launchFactsFile = "launch.facts"
+
+type launchFacts struct {
+	Socket string
+	Groups []string
+	Name   string
+	Cwd    string
+}
+
+func writeLaunchFacts(directory, socket, groups, name, cwd string) error {
+	return os.WriteFile(filepath.Join(directory, launchFactsFile), []byte(strings.Join([]string{socket, groups, name, cwd}, "\x00")), 0600)
+}
+
+// readLaunchFacts accepts only whole facts: exactly four fields, an absolute bus
+// socket and working directory, and groups that decode as a JSON array of strings.
+func readLaunchFacts(directory string) (launchFacts, bool) {
+	body, err := os.ReadFile(filepath.Join(directory, launchFactsFile))
+	fields := strings.Split(string(body), "\x00")
+	if err != nil || len(fields) != 4 || !filepath.IsAbs(fields[0]) || !filepath.IsAbs(fields[3]) {
+		return launchFacts{}, false
+	}
+	var groups []string
+	if json.Unmarshal([]byte(fields[1]), &groups) != nil || groups == nil {
+		return launchFacts{}, false
+	}
+	return launchFacts{Socket: fields[0], Groups: groups, Name: fields[2], Cwd: fields[3]}, true
+}
+
+func startPeerClient(lifetimeCtx, requestCtx context.Context, cwd string, notify func(acpFrame)) (*acpClient, *nativeProcess, error) {
+	cmd := command("grok", "agent", "--leader", "stdio")
 	cmd.Dir, cmd.Env, cmd.Stderr, cmd.SysProcAttr = cwd, nativeEnvironment(), os.Stderr, &syscall.SysProcAttr{Setpgid: true}
 	return startObserverClient(lifetimeCtx, requestCtx, cmd, notify)
 }
@@ -51,17 +85,22 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 		}
 		return syscall.Exec(path, append([]string{path}, plan.Args...), plan.Env)
 	}
-	socket := first(environmentValue(plan.Env, host.SocketEnv), sessionkit.Socket())
+	// The helper accepts only an absolute launch directory and compares this socket
+	// with the absolute one the kit resolves.
+	socket, err := filepath.Abs(first(environmentValue(plan.Env, host.SocketEnv), sessionkit.Socket()))
+	if err != nil {
+		return err
+	}
 	cwd, err := interactiveCwd(plan.Args)
 	if err != nil {
 		return err
 	}
-	policy, err := interactivePolicy(plan.Args)
-	if err != nil {
-		return err
+	groups := first(environmentValue(plan.Env, host.GroupsEnv), "[]")
+	var list []string
+	if json.Unmarshal([]byte(groups), &list) != nil || list == nil {
+		return errors.New("SESSIONBUS_GROUPS must be a JSON array")
 	}
-	nativeEnv := peerNativeEnvironment(plan.Env)
-	if err = ensureSessionbusPermission(nativeEnv, cwd); err != nil {
+	if err = ensureManagedConfig(plan.Env, cwd); err != nil {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(socket), 0700); err != nil {
@@ -72,90 +111,38 @@ func RunInteractive(ctx context.Context, plan host.ExecPlan) error {
 		return err
 	}
 	defer os.RemoveAll(runtime)
-	// A fresh resource directory for each launch, never a native/session ID.
-	privateSocket, key := filepath.Join(runtime, "presence.sock"), "native"
-	leaderPath := leaderSocket(privateSocket, key)
-	plan.Env = setEnvironment(plan.Env, ManagedEnv, leaderPath)
-	nativeEnv = setEnvironment(nativeEnv, ManagedEnv, leaderPath)
-	leader, err := startLeaderWithPolicy(ctx, privateSocket, key, cwd, policy, nativeEnv)
-	if err != nil {
+	// A fresh resource directory for each launch, never a native/session ID. Its path
+	// is the one value the helper's registration interpolates, and native expands a
+	// reference inside it.
+	if strings.Contains(runtime, "$") {
+		return fmt.Errorf("managed launch directory %s contains \"$\", which Grok would expand in the Sessionbus helper registration; use a Sessionbus socket directory without it", runtime)
+	}
+	if !utf8.ValidString(runtime) {
+		return fmt.Errorf("managed launch directory %q is not valid UTF-8, which Grok cannot pass on in the Sessionbus helper registration; use a Sessionbus socket directory with a UTF-8 path", runtime)
+	}
+	if err = writeLaunchFacts(runtime, socket, groups, environmentValue(plan.Env, host.NameEnv), cwd); err != nil {
 		return err
 	}
-	childCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	hold, holdProcess, err := startPeerClient(childCtx, childCtx, leaderPath, cwd, nil)
-	if err != nil {
-		return errors.Join(err, closeNative("leader", leader))
-	}
-	plan.Args = append([]string{"--leader", "--leader-socket", leaderPath}, plan.Args...)
-	child := command(plan.Path, plan.Args...)
+	// A leader this TUI starts inherits its environment; the facts file carries these values.
+	plan.Env = slices.DeleteFunc(slices.Clone(plan.Env), func(entry string) bool {
+		key, _, _ := strings.Cut(entry, "=")
+		return key == host.GroupsEnv || key == host.NameEnv
+	})
+	plan.Env = setEnvironment(plan.Env, ManagedEnv, runtime)
+	// Grok's own leader serves the session; the launcher starts the TUI alone.
+	child := command(plan.Path, append([]string{"--leader"}, plan.Args...)...)
 	child.Env, child.Stdin, child.Stdout, child.Stderr = plan.Env, os.Stdin, os.Stdout, os.Stderr
 	if err = child.Start(); err != nil {
-		stopPeerClient(hold, holdProcess)
-		return errors.Join(err, closeNative("leader", leader))
+		return err
 	}
 	childDone := make(chan error, 1)
-	go func() {
-		childDone <- child.Wait()
-		close(childDone)
-		cancel()
-	}()
-	finish := func(childErr error) error {
-		stopPeerClient(hold, holdProcess)
-		return errors.Join(childErr, closeNative("leader", leader))
+	go func() { childDone <- child.Wait() }()
+	select {
+	case childErr := <-childDone:
+		return childErr
+	case <-ctx.Done():
+		return finishInteractiveChild(child, childDone, interactiveSignal(ctx))
 	}
-	// A leader exit (for example a native update) or a lost startup hold no
-	// longer ends the session: the TUI owns its native reconnect, and the hold is
-	// startup presence only (Sessionbus delivery uses a separate observer). Each
-	// loss is reported after the TUI exits, never on the terminal it owns, and the
-	// TUI's own result is returned.
-	var notices []string
-	report := func(result error) error {
-		for _, notice := range notices {
-			fmt.Fprintln(os.Stderr, notice)
-		}
-		return result
-	}
-	holdDone, leaderDone := hold.done, leader.done
-	interactiveSelectGap()
-	for {
-		select {
-		case childErr := <-childDone:
-			return report(finish(childErr))
-		case <-ctx.Done():
-			return report(finish(finishInteractiveChild(child, childDone, interactiveSignal(ctx))))
-		case <-holdDone:
-			// The TUI's own exit cancels the hold; that closure is teardown, not a loss.
-			select {
-			case childErr := <-childDone:
-				return report(finish(childErr))
-			default:
-			}
-			holdDone = nil
-			notices = append(notices, fmt.Sprintf("sessionbus: Grok startup hold closed during the session: %v; it was startup presence only, Sessionbus delivery uses a separate observer", hold.err))
-		case <-leaderDone:
-			select {
-			case childErr := <-childDone:
-				return report(finish(childErr))
-			default:
-			}
-			leaderDone = nil
-			notices = append(notices, fmt.Sprintf("sessionbus: Grok leader exited during the session: %v; the TUI was left to its native reconnect", leader.Wait()))
-		}
-	}
-}
-
-// interactiveSelectGap runs once before RunInteractive's loss loop; a test seam only.
-var interactiveSelectGap = func() {}
-
-func peerNativeEnvironment(environment []string) []string {
-	result := nativeEnvironmentFrom(environment)
-	for _, name := range []string{host.SocketEnv, host.GroupsEnv, host.NameEnv, ManagedEnv} {
-		if value := environmentValue(environment, name); value != "" {
-			result = setEnvironment(result, name, value)
-		}
-	}
-	return result
 }
 
 func finishInteractiveChild(child *exec.Cmd, done <-chan error, stop os.Signal) error {
@@ -257,6 +244,10 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 	native := make([]string, 0, len(arguments))
 	groups := []string{}
 	name := ""
+	// A refusal is decided where this pass reads a flag. A token it steps over as an
+	// option's required value is that option's value, whatever it spells.
+	headless := ""
+	var conflict error
 	for i := 0; i < len(arguments); i++ {
 		arg := arguments[i]
 		if arg == "--" {
@@ -291,9 +282,21 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 			}
 		default:
 			native = append(native, arg)
+			valued := attached
 			if !attached && grokOptionTakesValue(key) && i+1 < len(arguments) && arguments[i+1] != "--" {
 				i++
-				native = append(native, arguments[i])
+				value, valued = arguments[i], true
+				native = append(native, value)
+			}
+			if grokHeadless(arg, key) {
+				headless = first(headless, key)
+			} else if conflict == nil && slices.Contains([]string{"--leader", "--no-leader", "--leader-socket"}, key) {
+				conflict = errors.New("grok-peer selects Grok's own leader; caller leader selection conflicts")
+			} else if conflict == nil && key == "--sandbox" && valued && value != "" && value != "off" && value != "none" {
+				// Native reads the exact values off and none as no sandbox and an empty
+				// value as no override; any other value, a custom profile name included,
+				// confines the session. A missing value is left to native.
+				conflict = fmt.Errorf("--sandbox %q makes Grok run the session without a leader, so it cannot be on Sessionbus; start a sandboxed session with plain grok", value)
 			}
 		}
 	}
@@ -304,20 +307,11 @@ func InteractivePlan(arguments, environment []string) (host.ExecPlan, error) {
 	if grokPassthrough(native) {
 		return host.ExecPlan{Path: "grok", Args: native, Env: env}, nil
 	}
-	if flag := grokHeadless(native); flag != "" {
-		return host.ExecPlan{}, fmt.Errorf("%s is headless; use a Sessionbus Grok lane", flag)
+	if headless != "" {
+		return host.ExecPlan{}, fmt.Errorf("%s is headless; use a Sessionbus Grok lane", headless)
 	}
-	for _, arg := range native {
-		if arg == "--" {
-			break
-		}
-		key, _, _ := strings.Cut(arg, "=")
-		if slices.Contains([]string{"--leader", "--no-leader", "--leader-socket"}, key) {
-			return host.ExecPlan{}, errors.New("grok-peer owns its private native leader; caller leader selection conflicts")
-		}
-	}
-	if _, err := interactivePolicy(native); err != nil {
-		return host.ExecPlan{}, err
+	if conflict != nil {
+		return host.ExecPlan{}, conflict
 	}
 	raw, _ := json.Marshal(groups)
 	env = setEnvironment(env, host.GroupsEnv, string(raw))
@@ -355,17 +349,9 @@ func nativeOption(arguments []string, target string) string {
 	return value
 }
 
-func grokHeadless(arguments []string) string {
-	for _, arg := range arguments {
-		if arg == "--" {
-			break
-		}
-		key, _, _ := strings.Cut(arg, "=")
-		if slices.Contains([]string{"-p", "--single", "--prompt-file", "--prompt-json", "--output-format", "--json-schema", "--max-turns", "--include-partial-messages"}, key) || strings.HasPrefix(arg, "-p") && !strings.HasPrefix(arg, "--") {
-			return key
-		}
-	}
-	return ""
+// grokHeadless reports a headless flag; arg stands where InteractivePlan reads a flag.
+func grokHeadless(arg, key string) bool {
+	return slices.Contains([]string{"-p", "--single", "--prompt-file", "--prompt-json", "--output-format", "--json-schema", "--max-turns", "--include-partial-messages", "--print", "--memory-flush"}, key) || strings.HasPrefix(arg, "-p") && !strings.HasPrefix(arg, "--")
 }
 
 var grokCommands = map[string]bool{
@@ -393,17 +379,35 @@ func grokPassthrough(arguments []string) bool {
 	return false
 }
 
-func ManagedHelper(environment []string) bool {
+// managedLaunch resolves a helper's managed launch: the marker is an absolute path that
+// is positively a directory, the facts file in it reads whole, and native gave the
+// helper a session id. Anything else leaves the helper inert: the unexpanded reference
+// a plain Grok client hands on, a relative path, a regular file or any stat error.
+func managedLaunch(environment []string) (string, launchFacts, bool) {
 	marker := environmentValue(environment, ManagedEnv)
-	return marker != "" && marker == environmentValue(environment, grokLeaderSocketEnv) && environmentValue(environment, grokSessionIDEnv) != "" && !launchEnded(marker)
+	if !filepath.IsAbs(marker) || environmentValue(environment, grokSessionIDEnv) == "" {
+		return "", launchFacts{}, false
+	}
+	if info, err := os.Lstat(marker); err != nil || !info.IsDir() {
+		return "", launchFacts{}, false
+	}
+	facts, whole := readLaunchFacts(marker)
+	if !whole {
+		return "", launchFacts{}, false
+	}
+	return marker, facts, true
 }
 
-// launchEnded reports that a managed launch is over: its private launch directory,
-// the marker socket's parent, no longer exists. Only the launcher removes it, when it
-// returns. The socket itself can be missing during a live native leader turnover, and
-// any other stat error is not taken as the end of the launch.
+func ManagedHelper(environment []string) bool {
+	_, _, managed := managedLaunch(environment)
+	return managed
+}
+
+// launchEnded reports that a managed launch is over: its launch directory, the marker,
+// no longer exists. Only the launcher removes it, when it returns. Any other stat error
+// is not taken as the end of the launch.
 func launchEnded(marker string) bool {
-	_, err := os.Stat(filepath.Dir(marker))
+	_, err := os.Stat(marker)
 	return errors.Is(err, fs.ErrNotExist)
 }
 
@@ -411,9 +415,9 @@ func launchEnded(marker string) bool {
 var launchPollInterval = 2 * time.Second
 
 // WithManagedLaunch returns a context that is cancelled once the helper's managed
-// launch has ended. A native replacement leader can keep a helper running after the
-// launcher has quit; cancelling its context ends its MCP frontend and its Sessionbus
-// presence through their ordinary shutdown paths.
+// launch has ended. Grok's leader can keep a session and its helper running after the
+// launcher has quit; cancelling the helper's context ends its MCP frontend and its
+// Sessionbus presence through their ordinary shutdown paths.
 func WithManagedLaunch(ctx context.Context, environment []string) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	marker, interval := environmentValue(environment, ManagedEnv), launchPollInterval

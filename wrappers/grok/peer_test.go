@@ -45,6 +45,24 @@ func TestInteractivePlan(t *testing.T) {
 		{[]string{"--resume", testSessionID, "-r" + testSessionID}, []string{"--resume", testSessionID, "-r" + testSessionID}, `[]`, ""},
 		{[]string{"--session-id", testSessionID, "--peer-name", "alias"}, []string{"--session-id", testSessionID}, `[]`, "alias"},
 		{[]string{"--disallowed-tools", "Read,Write"}, []string{"--disallowed-tools", "Read,Write"}, `[]`, ""},
+		// Caller rules and modes reach the TUI as given, a rule naming the Sessionbus tool included.
+		{[]string{"--allow", "Bash(pwd)", "--deny", "MCPTool(sessionbus__sessionbus)", "--allowedTools=Read(*)", "--disallowedTools", "mcp__sessionbus", "--deny=unrelated,,other"}, []string{"--allow", "Bash(pwd)", "--deny", "MCPTool(sessionbus__sessionbus)", "--allowedTools=Read(*)", "--disallowedTools", "mcp__sessionbus", "--deny=unrelated,,other"}, `[]`, ""},
+		{[]string{"--permission-mode", "default", "--always-approve"}, []string{"--permission-mode", "default", "--always-approve"}, `[]`, ""},
+		{[]string{"--sandbox", "off"}, []string{"--sandbox", "off"}, `[]`, ""},
+		{[]string{"--sandbox=none", "--sandbox", "none", "--sandbox=off"}, []string{"--sandbox=none", "--sandbox", "none", "--sandbox=off"}, `[]`, ""},
+		// An empty sandbox value is native's no override; a missing one is native's to judge.
+		{[]string{"--sandbox="}, []string{"--sandbox="}, `[]`, ""},
+		{[]string{"--sandbox", ""}, []string{"--sandbox", ""}, `[]`, ""},
+		{[]string{"--sandbox"}, []string{"--sandbox"}, `[]`, ""},
+		{[]string{"--sandbox", "--", "workspace"}, []string{"--sandbox", "--", "workspace"}, `[]`, ""},
+		// The required value of a native option is its value, whatever it spells.
+		{[]string{"--model", "--sandbox"}, []string{"--model", "--sandbox"}, `[]`, ""},
+		{[]string{"--rules", "--print"}, []string{"--rules", "--print"}, `[]`, ""},
+		{[]string{"--system-prompt", "--memory-flush"}, []string{"--system-prompt", "--memory-flush"}, `[]`, ""},
+		{[]string{"--model=--single"}, []string{"--model=--single"}, `[]`, ""},
+		{[]string{"--model", "--single", "--agent", "--leader", "--effort", "-pro"}, []string{"--model", "--single", "--agent", "--leader", "--effort", "-pro"}, `[]`, ""},
+		// Nothing after the delimiter is a flag.
+		{[]string{"--", "--sandbox", "workspace", "--print", "--memory-flush", "--leader", "--leader-socket", "elsewhere", "-p"}, []string{"--", "--sandbox", "workspace", "--print", "--memory-flush", "--leader", "--leader-socket", "elsewhere", "-p"}, `[]`, ""},
 	} {
 		plan, err := InteractivePlan(test.args, []string{"PATH=/bin", host.SessionIDEnv + "=inherited", host.NameEnv + "=inherited", host.GroupsEnv + `=["inherited"]`})
 		must(t, err)
@@ -57,27 +75,25 @@ func TestInteractivePlan(t *testing.T) {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil, "conflict/missing value accepted: %#v", args)
 	}
-	for _, args := range [][]string{{"--deny", "MCPTool(sessionbus__sessionbus)"}, {"--disallowedTools=mcp__sessionbus"}, {"--deny=unrelated,,other"}} {
+	// An option whose value is optional steps over nothing: the next token is a flag.
+	for _, args := range [][]string{{"--no-leader"}, {"--leader"}, {"--leader-socket", "elsewhere"}, {"--worktree", "--leader"}} {
 		_, err := InteractivePlan(args, nil)
-		check(t, err != nil && strings.Contains(err.Error(), "disables the managed Sessionbus tool"), "managed deny reached native plan: %#v: %v", args, err)
+		check(t, err != nil && strings.Contains(err.Error(), "grok-peer selects Grok's own leader"), "caller leader selection = %#v: %v", args, err)
 	}
-	for _, args := range [][]string{{"--single", "prompt"}, {"-pprompt"}, {"--prompt-file", "prompt.txt"}, {"--prompt-json", `[]`}, {"--output-format", "json"}, {"--json-schema", `{}`}, {"--max-turns", "1"}, {"--include-partial-messages"}} {
+	for _, args := range [][]string{{"--single", "prompt"}, {"-pprompt"}, {"--prompt-file", "prompt.txt"}, {"--prompt-json", `[]`}, {"--output-format", "json"}, {"--json-schema", `{}`}, {"--max-turns", "1"}, {"--include-partial-messages"}, {"--print", "prompt"}, {"--print=prompt"}, {"--memory-flush"}, {"--leader", "--single", "x"}, {"--resume", "--single"}} {
 		_, err := InteractivePlan(args, nil)
 		check(t, err != nil && strings.Contains(err.Error(), "Sessionbus Grok lane"), "headless accepted: %#v", args)
+	}
+	// Native takes only the exact values off and none as no sandbox; nothing is trimmed or folded.
+	for _, args := range [][]string{{"--sandbox", "workspace"}, {"--sandbox=workspace"}, {"--sandbox", "devbox"}, {"--sandbox", "read-only"}, {"--sandbox=readonly"}, {"--sandbox", "strict"}, {"--sandbox", "custom-profile"}, {"--sandbox", "Off"}, {"--sandbox=NONE"}, {"--sandbox", " off"}, {"--sandbox", "off", "--sandbox", "workspace"}, {"--model", "x", "--sandbox", "workspace"}} {
+		_, err := InteractivePlan(args, nil)
+		check(t, err != nil && strings.Contains(err.Error(), "without a leader"), "confining sandbox accepted: %#v: %v", args, err)
 	}
 	for _, args := range [][]string{{"sessions", "list"}, {"--version"}, {"plugin", "list", "--json"}} {
 		plan, err := InteractivePlan(args, []string{ManagedEnv + "=inherited"})
 		must(t, err)
 		check(t, slices.Equal(plan.Args, args) && environment(plan.Env, ManagedEnv) == "", "native command wrapped: %#v", plan)
 	}
-	for _, args := range [][]string{nil, {"--always-approve"}, {"--always-approve", "--permission-mode=default"}, {"--permission-mode", "default", "--always-approve"}, {"--permission-mode", "custom-native-value"}} {
-		policy, err := interactivePolicy(args)
-		must(t, err)
-		check(t, slices.Equal(policy, appendGrant(args...)), "explicit native policy rewritten: %#v", policy)
-	}
-	policy, err := interactivePolicy([]string{"--", "--always-approve"})
-	must(t, err)
-	check(t, slices.Equal(policy, sessionbusLeaderPolicy()), "post-delimiter operand selected policy: %#v", policy)
 }
 
 func TestManagedInteractiveConfigFailurePrecedesNativeStart(t *testing.T) {
@@ -104,34 +120,267 @@ func TestManagedInteractiveConfigFailurePrecedesNativeStart(t *testing.T) {
 	}
 }
 
-func TestManagedInteractiveDenyValidationPrecedesConfigWrite(t *testing.T) {
+// registeredGrokHome gives the test a Grok home whose config holds the helper's
+// registration, as the installer leaves it.
+func registeredGrokHome(t *testing.T) string {
+	t.Helper()
 	home := t.TempDir()
-	plan := host.ExecPlan{
-		Path: "grok",
-		Args: []string{"--deny", sessionbusNativeRule},
-		Env:  []string{ManagedEnv + "=launch", "GROK_HOME=" + home},
+	must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte("[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n"), 0o600))
+	t.Setenv("GROK_HOME", home)
+	return home
+}
+
+func TestManagedLaunchRequiresHelperRegistration(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	for name, config := range map[string]string{
+		"no entry":       "model = \"grok\"\n",
+		"another server": "[mcp_servers.other]\ncommand = \"other\"\n",
+		"not a table":    "[mcp_servers]\nsessionbus = \"grok-peer-mcp\"\n",
+		"no config file": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			if config != "" {
+				must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(config), 0o600))
+			}
+			t.Setenv("GROK_HOME", home)
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			err = RunInteractive(context.Background(), plan)
+			check(t, err != nil && strings.Contains(err.Error(), "no mcp_servers.sessionbus entry") && strings.Contains(err.Error(), "grok-peer installer"), "unregistered launch = %v", err)
+			check(t, len(records(t, recordPath)) == 0, "native started without the helper registration: %s", records(t, recordPath))
+			launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+			must(t, err)
+			check(t, len(launch) == 0, "refused launch left its directory: %v", launch)
+		})
 	}
-	err := RunInteractive(context.Background(), plan)
-	if err == nil || !strings.Contains(err.Error(), "disables the managed Sessionbus tool") {
-		t.Fatalf("deny accepted: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(home, grokConfigFile)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("config written before deny validation: %v", err)
+	for name, config := range map[string]string{
+		"table":        "[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n",
+		"dotted keys":  "mcp_servers.sessionbus.command = \"grok-peer-mcp\"\n",
+		"inline table": "mcp_servers = { sessionbus = { command = \"grok-peer-mcp\" } }\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(config), 0o600))
+			t.Setenv("GROK_HOME", home)
+			must(t, os.RemoveAll(recordPath))
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			var exited *exec.ExitError
+			check(t, errors.As(RunInteractive(context.Background(), plan), &exited) && exited.ExitCode() == 7, "registered launch did not run the TUI")
+			check(t, countStartsContaining(records(t, recordPath)) == 1, "registered launch starts = %s", records(t, recordPath))
+		})
 	}
 }
 
-func TestManagedDenyRejectedBeforeNativeStart(t *testing.T) {
+// An entry that Grok would not start is refused like a missing one, after the same
+// permission step: a boolean enabled = false, or the exact name in the top-level list.
+func TestManagedLaunchRefusesDisabledHelperRegistration(t *testing.T) {
 	root := testsocket.Directory(t)
-	recordPath := filepath.Join(t.TempDir(), "record")
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
 	t.Setenv("GROK_TEST_RECORD", recordPath)
-	plan := host.ExecPlan{
-		Path: "grok",
-		Args: []string{"--deny", "MCPTool(sessionbus__sessionbus)"},
-		Env:  []string{ManagedEnv + "=launch", host.SocketEnv + "=" + filepath.Join(root, "sessionbus.sock")},
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	for name, test := range map[string]struct{ config, cause string }{
+		"enabled false":             {"[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = false\n", "disabled by enabled = false"},
+		"enabled false inline":      {"mcp_servers = { sessionbus = { command = \"grok-peer-mcp\", enabled = false } }\n", "disabled by enabled = false"},
+		"named in the list":         {"disabled_mcp_servers = [\"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n", "names sessionbus in disabled_mcp_servers"},
+		"named beside a non-string": {"disabled_mcp_servers = [\"sessionbus\", 1]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n", "names sessionbus in disabled_mcp_servers"},
+		"named among others":        {"disabled_mcp_servers = [\"other\", \"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = true\n", "names sessionbus in disabled_mcp_servers"},
+		"enabled false and listed":  {"disabled_mcp_servers = [\"sessionbus\"]\n\n[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\nenabled = false\n", "disabled by enabled = false"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(test.config), 0o600))
+			t.Setenv("GROK_HOME", home)
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			err = RunInteractive(context.Background(), plan)
+			check(t, err != nil && strings.Contains(err.Error(), test.cause) && strings.Contains(err.Error(), "grok mcp enable sessionbus") && !strings.Contains(err.Error(), "\n"), "disabled registration = %v", err)
+			check(t, len(records(t, recordPath)) == 0, "native started with a disabled helper registration: %s", records(t, recordPath))
+			launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+			must(t, err)
+			check(t, len(launch) == 0, "refused launch left its directory: %v", launch)
+			// The permission rule is ensured first, as for a missing entry.
+			written, err := os.ReadFile(filepath.Join(home, grokConfigFile))
+			must(t, err)
+			check(t, strings.HasPrefix(string(written), test.config) && strings.Contains(string(written), sessionbusNativeRule), "config after the refusal = %q", written)
+		})
 	}
-	err := RunInteractive(context.Background(), plan)
-	check(t, err != nil && strings.Contains(err.Error(), "disables the managed Sessionbus tool"), "managed deny = %v", err)
-	check(t, len(records(t, recordPath)) == 0, "managed deny started native Grok: %s", records(t, recordPath))
+}
+
+// Only what Grok reads as disabling refuses. A list naming other servers, enabled = true,
+// a key Grok does not read, and shapes that are not a boolean or a list of strings leave
+// the launch as it is; nothing is trimmed or case-folded.
+func TestManagedLaunchProceedsWithEnabledHelperRegistration(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	entry := "[mcp_servers.sessionbus]\ncommand = \"grok-peer-mcp\"\n"
+	for name, config := range map[string]string{
+		"list names another server":    "disabled_mcp_servers = [\"other\"]\n\n" + entry,
+		"empty list":                   "disabled_mcp_servers = []\n\n" + entry,
+		"enabled true":                 entry + "enabled = true\n",
+		"disabled key in the entry":    entry + "disabled = true\n",
+		"enabled not a boolean":        entry + "enabled = \"false\"\n",
+		"list is not a list":           "disabled_mcp_servers = \"sessionbus\"\n\n" + entry,
+		"list holds only a non-string": "disabled_mcp_servers = [1]\n\n" + entry,
+		"other spellings of the name":  "disabled_mcp_servers = [\"Sessionbus\", \" sessionbus\", \"sessionbus \"]\n\n" + entry,
+		"list inside the entry":        entry + "disabled_mcp_servers = [\"sessionbus\"]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			must(t, os.WriteFile(filepath.Join(home, grokConfigFile), []byte(config), 0o600))
+			t.Setenv("GROK_HOME", home)
+			must(t, os.RemoveAll(recordPath))
+			plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+			must(t, err)
+			var exited *exec.ExitError
+			check(t, errors.As(RunInteractive(context.Background(), plan), &exited) && exited.ExitCode() == 7, "enabled registration did not run the TUI")
+			check(t, countStartsContaining(records(t, recordPath)) == 1, "enabled registration starts = %s", records(t, recordPath))
+		})
+	}
+}
+
+func TestManagedLaunchRefusesExpandableLaunchPath(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	registeredGrokHome(t)
+	// The launch directory is created beside the bus socket; native would expand this name.
+	beside := filepath.Join(root, "run$HOME")
+	t.Setenv(host.SocketEnv, filepath.Join(beside, "sessionbus.sock"))
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+	must(t, err)
+	err = RunInteractive(context.Background(), plan)
+	check(t, err != nil && strings.Contains(err.Error(), `contains "$"`), "expandable launch path = %v", err)
+	check(t, len(records(t, recordPath)) == 0, "native started with an expandable launch path: %s", records(t, recordPath))
+	entries, err := os.ReadDir(beside)
+	must(t, err)
+	check(t, len(entries) == 0, "refused launch left its directory: %v", entries)
+}
+
+func TestManagedLaunchRefusesNonUTF8LaunchPath(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	registeredGrokHome(t)
+	// The launch directory is created beside the bus socket; Grok cannot pass this name on.
+	beside := filepath.Join(root, "run\xff")
+	if err := os.Mkdir(beside, 0o700); err != nil {
+		t.Skipf("filesystem rejects a name that is not UTF-8: %v", err)
+	}
+	t.Setenv(host.SocketEnv, filepath.Join(beside, "sessionbus.sock"))
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
+	must(t, err)
+	err = RunInteractive(context.Background(), plan)
+	check(t, err != nil && strings.Contains(err.Error(), "is not valid UTF-8"), "launch path that is not UTF-8 = %v", err)
+	check(t, len(records(t, recordPath)) == 0, "native started with a launch path that is not UTF-8: %s", records(t, recordPath))
+	entries, err := os.ReadDir(beside)
+	must(t, err)
+	check(t, len(entries) == 0, "refused launch left its directory: %v", entries)
+}
+
+// Only the launch directory travels through Grok. The facts file is read as bytes, so a
+// working directory, name or socket that is not UTF-8 reaches the helper as written.
+func TestLaunchFactsReachTheHelperByteForByte(t *testing.T) {
+	root := testsocket.Directory(t)
+	socket, work, name := filepath.Join(root, "bus\xfe"), filepath.Join(root, "work\xff"), "name\xfd $HOME"
+	launch, err := os.MkdirTemp(root, "grok-launch-")
+	must(t, err)
+	must(t, writeLaunchFacts(launch, socket, `["team\u00e9"]`, name, work))
+	_, facts, managed := managedLaunch(managedPeerEnv(nil, testSessionID, launch))
+	check(t, managed && facts.Socket == socket && facts.Cwd == work && facts.Name == name && slices.Equal(facts.Groups, []string{"team\u00e9"}), "facts read by the helper = %q managed=%t", facts, managed)
+
+	// The helper starts its observer in that directory and reaches the bus at that
+	// socket. No name is requested here: native's JSON cannot return such a title.
+	t.Run("observer in that directory", func(t *testing.T) {
+		if err := os.Mkdir(work, 0o700); err != nil {
+			t.Skipf("filesystem rejects a name that is not UTF-8: %v", err)
+		}
+		must(t, writeLaunchFacts(launch, socket, "[]", "", work))
+		server, hellos := fakeDaemon(t, socket)
+		defer server.Close()
+		t.Setenv(host.SocketEnv, "")
+		t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+		t.Setenv("GROK_TEST_CWD", root)
+		backend, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, launch))
+		must(t, err)
+		defer backend.Shutdown()
+		backend.mu.Lock()
+		observerDirectory := backend.cwd
+		backend.mu.Unlock()
+		check(t, observerDirectory == work, "observer directory = %q", observerDirectory)
+		backend.Initialized()
+		admitted := awaitHello(t, hellos)
+		check(t, admitted.SessionID == testSessionID, "published identity = %+v", admitted)
+		admitted.ack <- true
+		awaitChannel(t, backend.ready, "Grok peer admission")
+	})
+}
+
+func TestRelativeBusSocketIsAbsoluteInLaunchFacts(t *testing.T) {
+	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+	registeredGrokHome(t)
+	tuiPID, release := filepath.Join(root, "tui.pid"), filepath.Join(root, "release")
+	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPID)
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", release)
+	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
+	// The launcher resolves the relative socket where it runs.
+	t.Chdir(root)
+	t.Setenv(host.SocketEnv, filepath.Join("relative", "bus"))
+	absolute := filepath.Join(root, "relative", "bus")
+	plan, err := InteractivePlan([]string{"--session-id", testSessionID}, os.Environ())
+	must(t, err)
+	done := make(chan error, 1)
+	go func() { done <- RunInteractive(context.Background(), plan) }()
+	tuiPidfd := interactivePidfd(t, tuiPID)
+	defer closeProcessHandle(tuiPidfd)
+	var start struct {
+		Kind  string `json:"kind"`
+		Value struct {
+			Environment map[string]string `json:"environment"`
+		} `json:"value"`
+	}
+	must(t, json.Unmarshal(records(t, recordPath)[0], &start))
+	marker := start.Value.Environment[ManagedEnv]
+	info, err := os.Lstat(marker)
+	check(t, start.Kind == "START" && filepath.IsAbs(marker) && err == nil && info.IsDir() && filepath.Dir(marker) == filepath.Dir(absolute), "TUI managed marker = %q (%v)", marker, err)
+	// The helper runs under Grok's leader, in another directory and with the empty socket
+	// its registration gives it. It reads the launch's absolute socket from the facts file
+	// and applies it to its own environment, where the kit resolves it.
+	t.Chdir(t.TempDir())
+	t.Setenv(host.SocketEnv, "")
+	env := managedPeerEnv(os.Environ(), testSessionID, marker)
+	_, facts, managed := managedLaunch(env)
+	check(t, managed && facts.Socket == absolute && facts.Cwd == root, "facts of a launch with a relative bus socket = %+v managed=%t", facts, managed)
+	server, hellos := fakeDaemon(t, absolute)
+	defer server.Close()
+	backend, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	check(t, os.Getenv(host.SocketEnv) == absolute && sessionkit.Socket() == absolute, "helper bus socket = %q, kit resolves %q", os.Getenv(host.SocketEnv), sessionkit.Socket())
+	backend.Initialized()
+	admitted := awaitHello(t, hellos)
+	check(t, admitted.SessionID == testSessionID, "published identity = %+v", admitted)
+	admitted.ack <- true
+	awaitChannel(t, backend.ready, "Grok peer admission")
+	backend.Shutdown()
+	must(t, os.WriteFile(release, nil, 0o600))
+	var exited *exec.ExitError
+	check(t, errors.As(<-done, &exited) && exited.ExitCode() == 7, "launcher result was not the TUI's")
+	check(t, !exists(marker), "launch directory survived the launcher")
 }
 
 func TestNativeTitleEventsRefreshPeerWithoutDelivery(t *testing.T) {
@@ -146,8 +395,7 @@ func TestNativeTitleEventsRefreshPeerWithoutDelivery(t *testing.T) {
 	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
 	t.Setenv("GROK_TEST_TITLES", "native-title,")
 	t.Setenv("GROK_TEST_ROSTER_CHANGE", changed)
-	env := managedPeerEnv(os.Environ(), testSessionID, filepath.Join(root, "leader.sock"))
-	env = setEnvironment(env, host.GroupsEnv, `["peer-group"]`)
+	env := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket, Groups: []string{"peer-group"}}))
 	backend, err := NewPeerBackend(context.Background(), env)
 	must(t, err)
 	defer backend.Shutdown()
@@ -177,8 +425,7 @@ func TestPeerSurvivesAbsentDaemonAndReconnectsWithoutReplay(t *testing.T) {
 	t.Setenv("GROK_TEST_TITLES", "before-outage,after-outage")
 	titleChange := filepath.Join(root, "title-change")
 	t.Setenv("GROK_TEST_ROSTER_CHANGE", titleChange)
-	env := managedPeerEnv(os.Environ(), testSessionID, filepath.Join(root, "leader.sock"))
-	env = setEnvironment(env, host.GroupsEnv, `["peer-group"]`)
+	env := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket, Groups: []string{"peer-group"}}))
 	backend, err := NewPeerBackend(context.Background(), env)
 	must(t, err)
 	backend.Initialized()
@@ -244,7 +491,7 @@ func TestPeerSupersededIsTerminalAndJoinsObserver(t *testing.T) {
 	t.Setenv(host.SocketEnv, socket)
 	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
 	t.Setenv("GROK_TEST_OBSERVER_PID", filepath.Join(root, "observer.pid"))
-	backend, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, filepath.Join(root, "leader.sock")))
+	backend, err := NewPeerBackend(context.Background(), managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket})))
 	must(t, err)
 	backend.Initialized()
 	admitted := awaitHello(t, hellos)
@@ -264,10 +511,29 @@ func TestPeerSupersededIsTerminalAndJoinsObserver(t *testing.T) {
 	backend.Shutdown()
 }
 
-func managedPeerEnv(env []string, id, leader string) []string {
+// liveLaunch writes a launch directory as the launcher does: private, beside the bus
+// socket, holding the facts file. The working directory defaults to the socket's.
+func liveLaunch(t *testing.T, facts launchFacts) string {
+	t.Helper()
+	launch, err := os.MkdirTemp(filepath.Dir(facts.Socket), "grok-launch-")
+	must(t, err)
+	if facts.Groups == nil {
+		facts.Groups = []string{}
+	}
+	if facts.Cwd == "" {
+		facts.Cwd = filepath.Dir(facts.Socket)
+	}
+	groups, err := json.Marshal(facts.Groups)
+	must(t, err)
+	must(t, writeLaunchFacts(launch, facts.Socket, string(groups), facts.Name, facts.Cwd))
+	return launch
+}
+
+// managedPeerEnv is a helper's environment as native starts it for a managed client:
+// the registration's interpolated launch directory and the native session id.
+func managedPeerEnv(env []string, id, launch string) []string {
 	env = setEnvironment(env, grokSessionIDEnv, id)
-	env = setEnvironment(env, grokLeaderSocketEnv, leader)
-	return setEnvironment(env, ManagedEnv, leader)
+	return setEnvironment(env, ManagedEnv, launch)
 }
 
 func TestProductSessionIDsCreateDistinctPeers(t *testing.T) {
@@ -277,8 +543,7 @@ func TestProductSessionIDsCreateDistinctPeers(t *testing.T) {
 		server, hellos := fakeDaemon(t, socket)
 		t.Setenv(host.SocketEnv, socket)
 		t.Setenv("GROK_TEST_SESSION_ID", id)
-		environment := setEnvironment(setEnvironment(os.Environ(), grokSessionIDEnv, id), grokLeaderSocketEnv, filepath.Join(root, "leader.sock"))
-		environment = setEnvironment(environment, ManagedEnv, environmentValue(environment, grokLeaderSocketEnv))
+		environment := managedPeerEnv(os.Environ(), id, liveLaunch(t, launchFacts{Socket: socket}))
 		opened := make(chan *PeerBackend, 1)
 		go func() {
 			backend, _ := NewPeerBackend(context.Background(), environment)
@@ -304,8 +569,7 @@ func TestPeerMCPServesWhileBusAdmissionIsHeld(t *testing.T) {
 	server, hellos := fakeDaemon(t, socket)
 	defer server.Close()
 	t.Setenv(host.SocketEnv, socket)
-	environment := setEnvironment(setEnvironment(os.Environ(), grokSessionIDEnv, testSessionID), grokLeaderSocketEnv, filepath.Join(root, "leader.sock"))
-	environment = setEnvironment(environment, ManagedEnv, environmentValue(environment, grokLeaderSocketEnv))
+	environment := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket}))
 	backend, err := NewPeerBackend(context.Background(), environment)
 	must(t, err)
 	input, writeInput := io.Pipe()
@@ -342,8 +606,7 @@ func TestPeerDeliveryOwnerShutdownCrossesBlockedInterject(t *testing.T) {
 	t.Setenv("GROK_TEST_INTERJECT_BLOCK", filepath.Join(root, "never"))
 	observerPID := filepath.Join(root, "observer.pid")
 	t.Setenv("GROK_TEST_OBSERVER_PID", observerPID)
-	environment := setEnvironment(setEnvironment(os.Environ(), grokSessionIDEnv, testSessionID), grokLeaderSocketEnv, filepath.Join(root, "leader.sock"))
-	environment = setEnvironment(environment, ManagedEnv, environmentValue(environment, grokLeaderSocketEnv))
+	environment := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket}))
 	backend, err := NewPeerBackend(context.Background(), environment)
 	must(t, err)
 	backend.Initialized()
@@ -374,8 +637,7 @@ func TestPeerDeliveryOwnerSerializesTwoReceipts(t *testing.T) {
 	cwd, err := os.Getwd()
 	must(t, err)
 	t.Setenv("GROK_TEST_CWD", cwd)
-	environment := setEnvironment(setEnvironment(os.Environ(), grokSessionIDEnv, testSessionID), grokLeaderSocketEnv, filepath.Join(root, "leader.sock"))
-	environment = setEnvironment(environment, ManagedEnv, environmentValue(environment, grokLeaderSocketEnv))
+	environment := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket}))
 	backend, err := NewPeerBackend(context.Background(), environment)
 	must(t, err)
 	backend.Initialized()
@@ -407,19 +669,131 @@ func TestPeerHelperRequiresProductIdentity(t *testing.T) {
 	check(t, err != nil && strings.Contains(err.Error(), "start Grok with grok-peer"), "missing identity = %v", err)
 }
 
-func TestInteractiveLauncherOwnsLeaderHoldAndTUI(t *testing.T) {
+func TestHelperTakesLaunchFactsFromTheFileNotItsEnvironment(t *testing.T) {
+	root := testsocket.Directory(t)
+	socket := filepath.Join(root, "bus")
+	server, hellos := fakeDaemon(t, socket)
+	defer server.Close()
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
+	// The registration hands the helper empty values. Whatever these names hold instead,
+	// inherited from the leader or expanded by native, is not the launch's.
+	t.Setenv(host.SocketEnv, filepath.Join(root, "another-bus"))
+	t.Setenv(host.GroupsEnv, `["environment-group"]`)
+	t.Setenv(host.NameEnv, "environment-name")
+	// The published directory stays native's roster row, not the launch's.
+	t.Setenv("GROK_TEST_CWD", root)
+	work := filepath.Join(root, "work")
+	must(t, os.Mkdir(work, 0o700))
+	facts := launchFacts{Socket: socket, Groups: []string{"team$HOME", "${SESSIONBUS_GROUPS}"}, Name: "name$HOME ${SESSIONBUS_SESSION_NAME}", Cwd: work}
+	env := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, facts))
+	// Grok's own leader names its socket as it likes; the helper no longer compares it.
+	env = setEnvironment(env, grokLeaderSocketEnv, filepath.Join(root, "another-leader.sock"))
+	backend, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	defer backend.Shutdown()
+	backend.Initialized()
+	admitted := awaitHello(t, hellos)
+	check(t, admitted.SessionID == testSessionID && admitted.Name == facts.Name && slices.Equal(admitted.Groups, facts.Groups), "published identity = %+v", admitted)
+	check(t, admitted.Info["cwd"] == root, "published directory = %v", admitted.Info)
+	admitted.ack <- true
+	awaitChannel(t, backend.ready, "Grok peer admission")
+	frames := records(t, recordPath)
+	var start struct {
+		Kind  string `json:"kind"`
+		Value struct {
+			Arguments   []string          `json:"arguments"`
+			Cwd         string            `json:"cwd"`
+			Environment map[string]string `json:"environment"`
+		} `json:"value"`
+	}
+	must(t, json.Unmarshal(frames[0], &start))
+	check(t, start.Kind == "START" && slices.Equal(start.Value.Arguments, []string{"agent", "--leader", "stdio"}), "observer command = %s", frames[0])
+	check(t, start.Value.Cwd == work, "observer directory = %q, want the launch's %q", start.Value.Cwd, work)
+	check(t, start.Value.Environment[host.SocketEnv] == "" && start.Value.Environment[host.GroupsEnv] == "" && start.Value.Environment[ManagedEnv] == "", "observer inherited Sessionbus names: %v", start.Value.Environment)
+	var rename struct {
+		Value struct {
+			Params struct {
+				Title string `json:"title"`
+			} `json:"params"`
+		} `json:"value"`
+	}
+	must(t, json.Unmarshal(findFrame(frames, "_x.ai/session/rename"), &rename))
+	check(t, rename.Value.Params.Title == facts.Name, "requested native title = %q", rename.Value.Params.Title)
+}
+
+func TestHelperDoesNotPublishWithoutItsLaunchWorkingDirectory(t *testing.T) {
+	root := testsocket.Directory(t)
+	socket := filepath.Join(root, "bus")
+	server, hellos := fakeDaemon(t, socket)
+	defer server.Close()
+	t.Setenv(host.SocketEnv, socket)
+	recordPath := filepath.Join(root, "record")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	gone := filepath.Join(root, "gone")
+	env := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket, Cwd: gone}))
+	backend, err := NewPeerBackend(context.Background(), env)
+	must(t, err)
+	defer backend.Shutdown()
+	backend.Initialized()
+	awaitChannel(t, backend.done, "Grok helper end")
+	backend.mu.Lock()
+	terminal := backend.err
+	backend.mu.Unlock()
+	check(t, errors.Is(terminal, os.ErrNotExist) && strings.Contains(terminal.Error(), "launch working directory "+gone), "helper result without its working directory = %v", terminal)
+	// No fallback directory: the observer never ran, so nothing was published.
+	check(t, len(records(t, recordPath)) == 0, "observer started elsewhere: %s", records(t, recordPath))
+	select {
+	case published := <-hellos:
+		t.Fatalf("helper published without an observer: %+v", published)
+	default:
+	}
+}
+
+func TestInteractiveLauncherStartsOnlyTheTUIOnGroksLeader(t *testing.T) {
 	root := testsocket.Directory(t)
 	recordPath := filepath.Join(root, "record")
 	socket := filepath.Join(root, "sessionbus.sock")
 	t.Setenv(host.SocketEnv, socket)
 	t.Setenv("GROK_TEST_RECORD", recordPath)
-	started := filepath.Join(root, "interactive-started")
-	leaderPID, holdPID, tuiPID := filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid"), filepath.Join(root, "tui.pid")
+	registeredGrokHome(t)
+	started, tuiPID := filepath.Join(root, "interactive-started"), filepath.Join(root, "tui.pid")
 	t.Setenv("GROK_TEST_INTERACTIVE_STARTED", started)
-	t.Setenv("GROK_TEST_LEADER_PID", leaderPID)
-	t.Setenv("GROK_TEST_OBSERVER_PID", holdPID)
 	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPID)
-	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--group", "team", "--cwd", root, "--model", "--yolo"}, os.Environ())
+	// What the launch directory holds when the launcher builds a native command,
+	// which is before that command starts.
+	type launchState struct {
+		directory       string
+		mode, factsMode os.FileMode
+		facts           []byte
+	}
+	var mu sync.Mutex
+	var built []launchState
+	var native []*exec.Cmd
+	previous := command
+	command = func(name string, arguments ...string) *exec.Cmd {
+		var state launchState
+		if found, _ := filepath.Glob(filepath.Join(root, "grok-launch-*")); len(found) == 1 {
+			state.directory = found[0]
+			if info, err := os.Lstat(state.directory); err == nil {
+				state.mode = info.Mode()
+			}
+			if info, err := os.Lstat(filepath.Join(state.directory, launchFactsFile)); err == nil {
+				state.factsMode = info.Mode()
+			}
+			state.facts, _ = os.ReadFile(filepath.Join(state.directory, launchFactsFile))
+		}
+		cmd := previous(name, arguments...)
+		mu.Lock()
+		built = append(built, state)
+		native = append(native, cmd)
+		mu.Unlock()
+		return cmd
+	}
+	t.Cleanup(func() { command = previous })
+	forwarded := []string{"--session-id", testSessionID, "--cwd", root, "--model", "--yolo", "--allow", "Bash(pwd)", "--deny=MCPTool(sessionbus__sessionbus)", "--sandbox", "off"}
+	plan, err := InteractivePlan(append([]string{"--group", "team,review$HOME", "-n", "initial ${SESSIONBUS_SESSION_NAME}"}, forwarded...), os.Environ())
 	must(t, err)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	done := make(chan struct{})
@@ -433,111 +807,79 @@ func TestInteractiveLauncherOwnsLeaderHoldAndTUI(t *testing.T) {
 		<-done
 	})
 	<-fileReady(started)
-	waitFrame(t, recordPath, "authenticate", 1)
+	mu.Lock()
+	states := slices.Clone(built)
+	mu.Unlock()
+	check(t, len(states) == 1 && states[0].directory != "", "launcher built %d native commands: %+v", len(states), states)
+	state := states[0]
+	check(t, state.mode.IsDir() && state.mode.Perm() == 0o700 && state.factsMode.IsRegular() && state.factsMode.Perm() == 0o600, "launch state is not private: directory %v, facts %v", state.mode, state.factsMode)
+	// Four fields in a fixed order, one NUL between them, each as it is.
+	check(t, string(state.facts) == socket+"\x00"+`["team","review$HOME"]`+"\x00"+"initial ${SESSIONBUS_SESSION_NAME}"+"\x00"+root, "facts written before native start = %q", state.facts)
 	frames := records(t, recordPath)
-	foundTUI, foundLeader := false, false
-	for _, raw := range frames {
-		var start struct {
-			Kind  string `json:"kind"`
-			Value struct {
-				Arguments []string `json:"arguments"`
-			} `json:"value"`
-		}
-		must(t, json.Unmarshal(raw, &start))
-		if start.Kind == "START" && slices.Contains(start.Value.Arguments, "--leader") && !slices.Contains(start.Value.Arguments, "stdio") {
-			index := slices.Index(start.Value.Arguments, "--model")
-			check(t, index >= 0 && index+1 < len(start.Value.Arguments) && start.Value.Arguments[index+1] == "--yolo", "native model value rewritten: %q", start.Value.Arguments)
-			check(t, !slices.Contains(start.Value.Arguments, "--always-approve"), "model value selected native bypass: %q", start.Value.Arguments)
-			foundTUI = true
-		}
-		if start.Kind == "START" && slices.Contains(start.Value.Arguments, "agent") && slices.Contains(start.Value.Arguments, "leader") {
-			check(t, slices.Contains(start.Value.Arguments, "--allow") && slices.Contains(start.Value.Arguments, "MCPTool(sessionbus__sessionbus)"), "private leader omitted exact Sessionbus grant: %q", start.Value.Arguments)
-			check(t, !slices.Contains(start.Value.Arguments, "--always-approve"), "model value selected private-leader bypass: %q", start.Value.Arguments)
-			foundLeader = true
-		}
+	check(t, len(frames) == 1, "launcher started more than the TUI: %s", frames)
+	var start struct {
+		Kind  string `json:"kind"`
+		Value struct {
+			Arguments   []string          `json:"arguments"`
+			Environment map[string]string `json:"environment"`
+		} `json:"value"`
 	}
-	check(t, foundTUI && foundLeader, "native interactive topology missing: tui=%t leader=%t", foundTUI, foundLeader)
-	check(t, countStartsContaining(frames, "--allow", "MCPTool(sessionbus__sessionbus)") == 1, "Sessionbus grant escaped the one private leader")
-	clients := peerClientPIDs(t, frames)
-	check(t, len(clients) == 1 && slices.Equal(peerClientMethods(frames, clients[0]), []string{"initialize", "authenticate"}), "startup hold was not the only quiet ACP client: %#v", frames)
-	check(t, countFrames(frames, "_x.ai/sessions/list") == 0, "launcher queried the roster")
-	check(t, containsStartEnv(frames, "leader", host.SocketEnv, socket) && containsStartEnv(frames, "leader", host.GroupsEnv, `["team"]`), "leader did not inherit helper bus identity")
-	check(t, leaderManagedMarkerMatchesSocket(frames), "leader did not receive its computed socket as the managed marker")
-	check(t, !containsStart(frames, "SESSIONBUS_LANE_SOCKET"), "interactive launcher published a private action endpoint")
-	leaderPidfd, holdPidfd, tuiPidfd := interactivePidfd(t, leaderPID), interactivePidfd(t, holdPID), interactivePidfd(t, tuiPID)
-	defer closeProcessHandle(leaderPidfd)
-	defer closeProcessHandle(holdPidfd)
+	must(t, json.Unmarshal(frames[0], &start))
+	// One process, grok --leader and the caller's arguments: a required value such as
+	// the model's stays a value, and caller rules and a non-confining sandbox pass on.
+	check(t, start.Kind == "START" && slices.Equal(start.Value.Arguments, append([]string{"--leader"}, forwarded...)), "TUI command = %q", start.Value.Arguments)
+	check(t, start.Value.Environment[ManagedEnv] == state.directory && filepath.IsAbs(state.directory) && filepath.Dir(state.directory) == root, "TUI managed marker = %q, launch directory %q", start.Value.Environment[ManagedEnv], state.directory)
+	check(t, start.Value.Environment[host.SocketEnv] == socket && start.Value.Environment[host.GroupsEnv] == "", "TUI Sessionbus environment = %v", start.Value.Environment)
+	tuiPidfd := interactivePidfd(t, tuiPID)
 	defer closeProcessHandle(tuiPidfd)
 	cancel(testSignal{syscall.SIGINT})
 	var exited *exec.ExitError
 	<-done
 	err = runErr
 	check(t, errors.As(err, &exited) && exited.ProcessState.Sys().(syscall.WaitStatus).Signal() == syscall.SIGINT, "signalled Grok child = %v", err)
-	check(t, !processRunning(t, leaderPidfd) && !processRunning(t, holdPidfd) && !processRunning(t, tuiPidfd), "interactive dependency survived shutdown")
-	check(t, !exists(filepath.Join(root, "lanes", host.LaunchTokenDigest(testSessionID)+".sock")), "peer endpoint remains")
+	check(t, !processRunning(t, tuiPidfd), "TUI survived the launcher")
+	check(t, !exists(state.directory), "launch directory survived the launcher")
+	check(t, len(records(t, recordPath)) == 1, "launcher teardown started native: %s", records(t, recordPath))
+	// A leader this TUI starts inherits its environment: the launch's groups and name
+	// travel in the facts file only, while the marker and the bus socket stay.
+	mu.Lock()
+	tuiEnv := native[0].Env
+	mu.Unlock()
+	check(t, !slices.ContainsFunc(tuiEnv, func(entry string) bool {
+		return strings.HasPrefix(entry, host.GroupsEnv+"=") || strings.HasPrefix(entry, host.NameEnv+"=")
+	}), "TUI environment holds the launch's groups or name")
+	check(t, environment(tuiEnv, ManagedEnv) == state.directory && environment(tuiEnv, host.SocketEnv) == socket, "TUI environment lost its marker or bus socket")
 }
 
-func TestStartupHoldLossKeepsTUI(t *testing.T) {
+func TestInteractiveLauncherRemovesItsDirectoryWhenTheTUIFailsToStart(t *testing.T) {
 	root := testsocket.Directory(t)
-	recordPath := filepath.Join(root, "record")
 	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
-	t.Setenv("GROK_TEST_RECORD", recordPath)
-	tuiPID, leaderPID, holdPID := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid")
-	holdRelease, tuiRelease := filepath.Join(root, "release-hold"), filepath.Join(root, "release-tui")
-	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPID)
-	t.Setenv("GROK_TEST_LEADER_PID", leaderPID)
-	t.Setenv("GROK_TEST_OBSERVER_PID", holdPID)
-	t.Setenv("GROK_TEST_HOLD_EXIT", holdRelease)
-	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
-	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", tuiRelease)
-	var killed []int
-	previous := killProcess
-	killProcess = func(pid int, signal syscall.Signal) error { killed = append(killed, pid); return previous(pid, signal) }
-	t.Cleanup(func() { killProcess = previous })
-	stderr := captureStderr(t)
+	registeredGrokHome(t)
+	// The launch directory holds its facts when the launcher builds native's command.
+	var prepared []string
+	previous := command
+	command = func(string, ...string) *exec.Cmd {
+		prepared, _ = filepath.Glob(filepath.Join(root, "grok-launch-*", launchFactsFile))
+		return exec.Command(filepath.Join(root, "absent-grok"))
+	}
+	t.Cleanup(func() { command = previous })
 	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
 	must(t, err)
-	done := make(chan error, 1)
-	go func() { done <- RunInteractive(context.Background(), plan) }()
-	tuiPidfd, leaderPidfd, holdPidfd := interactivePidfd(t, tuiPID), interactivePidfd(t, leaderPID), interactivePidfd(t, holdPID)
-	defer closeProcessHandle(tuiPidfd)
-	defer closeProcessHandle(leaderPidfd)
-	defer closeProcessHandle(holdPidfd)
-	must(t, os.WriteFile(holdRelease, nil, 0o600))
-	for deadline := time.Now().Add(5 * time.Second); processRunning(t, holdPidfd) && time.Now().Before(deadline); {
-		time.Sleep(10 * time.Millisecond)
-	}
-	check(t, !processRunning(t, holdPidfd), "startup hold did not exit")
-	// Losing the startup hold after the TUI started must not end the session.
-	select {
-	case err = <-done:
-		t.Fatalf("launcher returned after its startup hold closed: %v", err)
-	case <-time.After(2 * time.Second):
-	}
-	check(t, processRunning(t, tuiPidfd), "startup-hold loss terminated the TUI")
-	must(t, os.WriteFile(tuiRelease, nil, 0o600))
-	select {
-	case err = <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("launcher did not return after the TUI exited")
-	}
-	var exited *exec.ExitError
-	check(t, errors.As(err, &exited) && exited.ExitCode() == 7 && !strings.Contains(err.Error(), "startup hold"), "launcher result = %v, want the TUI's own exit 7", err)
-	check(t, !processRunning(t, leaderPidfd), "leader survived the TUI")
-	// The hold was reaped long before teardown; its process-group number must not be signalled.
-	check(t, !slices.Contains(killed, -interactivePID(t, holdPID)), "teardown signalled the reaped startup-hold group: %v", killed)
-	check(t, strings.Contains(stderr(), "sessionbus: Grok startup hold closed during the session"), "startup-hold notice missing")
-	clients := peerClientPIDs(t, records(t, recordPath))
-	check(t, len(clients) == 1 && slices.Equal(peerClientMethods(records(t, recordPath), clients[0]), []string{"initialize", "authenticate"}), "startup hold was not quiet")
+	err = RunInteractive(context.Background(), plan)
+	check(t, errors.Is(err, os.ErrNotExist), "TUI start failure = %v", err)
+	check(t, len(prepared) == 1, "launch state was not prepared before the TUI start: %v", prepared)
+	left, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+	must(t, err)
+	check(t, len(left) == 0, "failed TUI start left its launch directory: %v", left)
 }
 
 func TestInteractiveLauncherReturnsProductExit(t *testing.T) {
 	root := testsocket.Directory(t)
+	recordPath := filepath.Join(root, "record")
 	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
-	leaderPID, holdPID := filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid")
+	t.Setenv("GROK_TEST_RECORD", recordPath)
+	registeredGrokHome(t)
 	interactivePID, release := filepath.Join(root, "interactive.pid"), filepath.Join(root, "release")
-	t.Setenv("GROK_TEST_LEADER_PID", leaderPID)
-	t.Setenv("GROK_TEST_OBSERVER_PID", holdPID)
 	t.Setenv("GROK_TEST_INTERACTIVE_PID", interactivePID)
 	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
 	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", release)
@@ -545,82 +887,17 @@ func TestInteractiveLauncherReturnsProductExit(t *testing.T) {
 	must(t, err)
 	done := make(chan error, 1)
 	go func() { done <- RunInteractive(context.Background(), plan) }()
-	leaderPidfd, holdPidfd := interactivePidfd(t, leaderPID), interactivePidfd(t, holdPID)
+	tuiPidfd := interactivePidfd(t, interactivePID)
+	defer closeProcessHandle(tuiPidfd)
+	launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
+	must(t, err)
+	check(t, len(launch) == 1 && exists(filepath.Join(launch[0], launchFactsFile)) && processRunning(t, tuiPidfd), "interactive launch was not live: %v", launch)
 	must(t, os.WriteFile(release, nil, 0o600))
 	err = <-done
 	var exited *exec.ExitError
 	check(t, errors.As(err, &exited) && exited.ExitCode() == 7, "exit = %v", err)
-	check(t, !processRunning(t, leaderPidfd) && !processRunning(t, holdPidfd), "Grok dependencies survived the TUI")
-	closeProcessHandle(leaderPidfd)
-	closeProcessHandle(holdPidfd)
-}
-
-func TestInteractiveLeaderExitKeepsTUI(t *testing.T) {
-	root := testsocket.Directory(t)
-	recordPath := filepath.Join(root, "record")
-	t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
-	t.Setenv("GROK_TEST_RECORD", recordPath)
-	tuiPath, leaderPath, holdPath, release := filepath.Join(root, "tui.pid"), filepath.Join(root, "leader.pid"), filepath.Join(root, "hold.pid"), filepath.Join(root, "release")
-	t.Setenv("GROK_TEST_INTERACTIVE_PID", tuiPath)
-	t.Setenv("GROK_TEST_LEADER_PID", leaderPath)
-	t.Setenv("GROK_TEST_OBSERVER_PID", holdPath)
-	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
-	t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", release)
-	stderr := captureStderr(t)
-	plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
-	must(t, err)
-	done := make(chan error, 1)
-	go func() { done <- RunInteractive(context.Background(), plan) }()
-	tuiPID, leaderPID, holdPID := interactivePID(t, tuiPath), interactivePID(t, leaderPath), interactivePID(t, holdPath)
-	tuiPidfd, holdPidfd := pidfd(t, tuiPID), pidfd(t, holdPID)
-	defer closeProcessHandle(tuiPidfd)
-	defer closeProcessHandle(holdPidfd)
-	waitFrame(t, recordPath, "authenticate", 1)
-	launch, err := filepath.Glob(filepath.Join(root, "grok-launch-*"))
-	must(t, err)
-	check(t, len(launch) == 1 && processRunning(t, tuiPidfd) && processRunning(t, holdPidfd), "interactive launch was not live: %v", launch)
-	must(t, syscall.Kill(leaderPID, syscall.SIGTERM))
-	// A leader exit (for example a native update) must not end the session: the TUI owns its native reconnect.
-	select {
-	case err = <-done:
-		t.Fatalf("launcher returned after its leader exited: %v", err)
-	case <-time.After(2 * time.Second):
-	}
-	check(t, processRunning(t, tuiPidfd), "leader exit terminated the TUI")
-	must(t, os.WriteFile(release, nil, 0o600))
-	select {
-	case err = <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("launcher did not return after the TUI exited")
-	}
-	// The result is the TUI's own exit alone; the leader exit is a notice, not part of it.
-	var exited *exec.ExitError
-	check(t, errors.As(err, &exited) && exited.ExitCode() == 7 && slices.Equal(exitedPIDs(err), []int{tuiPID}), "launcher result = %v", err)
-	check(t, !processRunning(t, holdPidfd) && errors.Is(syscall.Kill(-holdPID, 0), syscall.ESRCH), "startup hold group survived the TUI")
 	check(t, !exists(launch[0]), "launch state survived the TUI")
-	check(t, strings.Contains(stderr(), "sessionbus: Grok leader exited during the session"), "leader-exit notice missing")
-}
-
-func TestOrdinaryTUIExitIsNotHoldLoss(t *testing.T) {
-	// The TUI exits at once; its own teardown cancels the startup hold. The gap makes the
-	// TUI result and the hold closure ready together before the loop's first select.
-	previous := interactiveSelectGap
-	interactiveSelectGap = func() { time.Sleep(300 * time.Millisecond) }
-	t.Cleanup(func() { interactiveSelectGap = previous })
-	for iteration := range 20 {
-		root := testsocket.Directory(t)
-		t.Setenv(host.SocketEnv, filepath.Join(root, "sessionbus.sock"))
-		t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
-		t.Setenv("GROK_TEST_INTERACTIVE_EXIT_BARRIER", "")
-		stderr := captureStderr(t)
-		plan, err := InteractivePlan([]string{"--session-id", testSessionID, "--cwd", root}, os.Environ())
-		must(t, err)
-		err = RunInteractive(context.Background(), plan)
-		notice := stderr()
-		var exited *exec.ExitError
-		check(t, errors.As(err, &exited) && exited.ExitCode() == 7, "iteration %d: launcher result = %v", iteration, err)
-		check(t, !strings.Contains(notice, "startup hold closed during the session") && !strings.Contains(notice, "leader exited during the session"), "iteration %d: ordinary TUI exit reported as a loss: %q", iteration, notice)
-	}
+	check(t, len(records(t, recordPath)) == 1, "launcher started more than the TUI: %s", records(t, recordPath))
 }
 
 func TestStopAuxSkipsReapedProcessGroup(t *testing.T) {
@@ -647,34 +924,6 @@ func TestStopAuxSkipsReapedProcessGroup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("owned live group survived teardown")
 	}
-}
-
-// captureStderr redirects os.Stderr until the returned function is called (or
-// the test ends) and returns what was written, including by child processes.
-func captureStderr(t *testing.T) func() string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	must(t, err)
-	previous := os.Stderr
-	os.Stderr = w
-	var buffer strings.Builder
-	copied := make(chan struct{})
-	go func() { _, _ = io.Copy(&buffer, r); close(copied) }()
-	var once sync.Once
-	restore := func() string {
-		once.Do(func() {
-			os.Stderr = previous
-			_ = w.Close()
-			select {
-			case <-copied:
-			case <-time.After(5 * time.Second):
-			}
-			_ = r.Close()
-		})
-		return buffer.String()
-	}
-	t.Cleanup(func() { restore() })
-	return restore
 }
 
 func TestLeaderCreatesDefaultStateRoot(t *testing.T) {
@@ -725,8 +974,7 @@ func TestPeerShutdownKillsItsObserverProcessGroup(t *testing.T) {
 	cwd, err := os.Getwd()
 	must(t, err)
 	t.Setenv("GROK_TEST_CWD", cwd)
-	environment := setEnvironment(setEnvironment(os.Environ(), grokSessionIDEnv, testSessionID), grokLeaderSocketEnv, filepath.Join(root, "leader.sock"))
-	environment = setEnvironment(environment, ManagedEnv, environmentValue(environment, grokLeaderSocketEnv))
+	environment := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, launchFacts{Socket: socket}))
 	opened := make(chan *PeerBackend, 1)
 	go func() {
 		backend, _ := NewPeerBackend(context.Background(), environment)
@@ -964,23 +1212,6 @@ func interactivePID(t *testing.T, path string) int {
 	return pid
 }
 
-// exitedPIDs lists, in order, the processes whose Wait errors err carries.
-func exitedPIDs(err error) []int {
-	if exited, ok := err.(*exec.ExitError); ok {
-		return []int{exited.Pid()}
-	}
-	var pids []int
-	switch wrapped := err.(type) {
-	case interface{ Unwrap() []error }:
-		for _, inner := range wrapped.Unwrap() {
-			pids = append(pids, exitedPIDs(inner)...)
-		}
-	case interface{ Unwrap() error }:
-		pids = exitedPIDs(wrapped.Unwrap())
-	}
-	return pids
-}
-
 func peerClientPIDs(t *testing.T, rows []json.RawMessage) []int {
 	t.Helper()
 	var result []int
@@ -1000,57 +1231,6 @@ func peerClientPIDs(t *testing.T, rows []json.RawMessage) []int {
 	return result
 }
 
-func peerClientMethods(rows []json.RawMessage, pid int) []string {
-	var result []string
-	for _, raw := range rows {
-		var record struct {
-			Kind  string `json:"kind"`
-			Value struct {
-				PID    int    `json:"_testPID"`
-				Method string `json:"method"`
-			} `json:"value"`
-		}
-		if json.Unmarshal(raw, &record) == nil && record.Kind == "FRAME" && record.Value.PID == pid {
-			result = append(result, record.Value.Method)
-		}
-	}
-	return result
-}
-
-func containsStartEnv(rows []json.RawMessage, argument, name, value string) bool {
-	for _, raw := range rows {
-		var record struct {
-			Kind  string `json:"kind"`
-			Value struct {
-				Arguments   []string          `json:"arguments"`
-				Environment map[string]string `json:"environment"`
-			} `json:"value"`
-		}
-		if json.Unmarshal(raw, &record) == nil && record.Kind == "START" && slices.Contains(record.Value.Arguments, argument) && record.Value.Environment[name] == value {
-			return true
-		}
-	}
-	return false
-}
-
-func leaderManagedMarkerMatchesSocket(rows []json.RawMessage) bool {
-	for _, raw := range rows {
-		var record struct {
-			Kind  string `json:"kind"`
-			Value struct {
-				Arguments   []string          `json:"arguments"`
-				Environment map[string]string `json:"environment"`
-			} `json:"value"`
-		}
-		if json.Unmarshal(raw, &record) != nil || record.Kind != "START" || !slices.Contains(record.Value.Arguments, "leader") {
-			continue
-		}
-		index := slices.Index(record.Value.Arguments, "--leader-socket")
-		return index >= 0 && index+1 < len(record.Value.Arguments) && record.Value.Environment[ManagedEnv] == record.Value.Arguments[index+1]
-	}
-	return false
-}
-
 func environment(values []string, name string) string {
 	for _, value := range values {
 		if key, body, found := strings.Cut(value, "="); found && key == name {
@@ -1066,6 +1246,7 @@ func TestResumingSameNativeIDUsesNewLaunchResources(t *testing.T) {
 	t.Setenv(host.SocketEnv, filepath.Join(root, "bus"))
 	t.Setenv("GROK_TEST_RECORD", recordPath)
 	t.Setenv("GROK_TEST_INTERACTIVE_EXIT", "7")
+	registeredGrokHome(t)
 	for range 2 {
 		plan, err := InteractivePlan([]string{"--resume", testSessionID, "-n", "initial"}, os.Environ())
 		must(t, err)
@@ -1077,17 +1258,17 @@ func TestResumingSameNativeIDUsesNewLaunchResources(t *testing.T) {
 		var record struct {
 			Kind  string `json:"kind"`
 			Value struct {
-				Arguments []string `json:"arguments"`
+				Environment map[string]string `json:"environment"`
 			} `json:"value"`
 		}
 		must(t, json.Unmarshal(raw, &record))
-		if record.Kind != "START" || !slices.Contains(record.Value.Arguments, "leader") {
+		if record.Kind != "START" {
 			continue
 		}
-		paths = append(paths, nativeOption(record.Value.Arguments, "--leader-socket"))
+		paths = append(paths, record.Value.Environment[ManagedEnv])
 	}
-	check(t, len(paths) == 2 && paths[0] != paths[1], "same native ID reused launch identity: %#v", paths)
+	check(t, len(paths) == 2 && paths[0] != paths[1] && filepath.IsAbs(paths[0]) && filepath.IsAbs(paths[1]), "same native ID reused launch identity: %#v", paths)
 	for _, path := range paths {
-		check(t, !exists(filepath.Dir(path)), "launch directory remains: %s", path)
+		check(t, !exists(path), "launch directory remains: %s", path)
 	}
 }

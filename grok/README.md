@@ -16,11 +16,19 @@ the resulting archive, and run its `./install`. The recipe installs under
 `~/.local/libexec/sessionbus/grok` and links `~/.local/bin/grok-peer`.
 Keep `~/.local/bin` on your login PATH. Reinstallation replaces the owned plugin
 payload, including removal of obsolete skills, and uses Grok's native plugin
-inventory/uninstall/install commands. Other native configuration stays native.
+inventory/uninstall/install commands. As its last step the installer registers
+the Sessionbus helper in your Grok user config with `grok mcp add sessionbus -s
+user`. That replaces an existing `sessionbus` entry and re-enables one you had
+disabled. If the step fails, the installer exits with Grok's message; while the
+config holds no entry, managed interactive launches refuse, and running the
+installer again completes it. To go back, remove the entry with `grok mcp
+remove sessionbus -s user` before installing an earlier grok-peer; the removal
+does not restore earlier settings. Other native configuration stays native.
 
 The private `grok-peer-mcp` alias points to the same binary. The registered
-plugin's `scripts/native-entry` resolves that permanent alias; it is not a
-public launcher mode. Only `skills/sessionbus/SKILL.md` is active guidance.
+`sessionbus` entry starts that permanent alias; it is not a public launcher
+mode. The plugin carries no helper definition; only
+`skills/sessionbus/SKILL.md` is active guidance.
 
 ## Interactive use
 
@@ -34,44 +42,102 @@ grok-peer -n child --group team
 `-n`/`--name` select the initial native session's title; `--peer-name` is a
 compatibility alias. `--yolo` translates to native `--always-approve`.
 All other native arguments retain their bytes and order. Native `--` ends
-wrapper parsing. Explicit leader-selection flags conflict with the private
-managed leader and are rejected. Use Sessionbus lanes for headless model work.
+wrapper parsing. The launcher starts one process, the TUI as `grok --leader`
+with those arguments, so the session runs on Grok's own leader. Explicit
+leader-selection flags (`--leader`, `--no-leader`, `--leader-socket`) conflict
+with that and are rejected. Headless flags, including `--print` and
+`--memory-flush`, are rejected: use Sessionbus lanes for headless model work.
+A `--sandbox` value that confines is rejected, because Grok then runs the
+session without a leader and it cannot be on the bus; start a sandboxed session
+with plain `grok`. The exact values `off` and `none` and an empty value are
+passed on, and a `--sandbox` without a value is left to Grok.
 
 Native `--resume`/`--continue`/session selectors remain native. Bare `--resume`
 uses Grok's native behavior (retained help says most recent), without a wrapper
 picker or title resolver. The launcher creates no native session ID. The first
-valid helper for that launch claims the optional initial name; later `/new`
-sessions keep their native names. Renaming happens after MCP initialization and
-must be confirmed natively. Failed naming does not transfer to later sessions.
-Blank native names stay blank; native title events update the same bus owner.
+valid helper for that launch claims the optional initial name for its native
+session; later `/new` sessions keep their native names. Renaming happens after
+MCP initialization and must be confirmed natively. If Grok replaces that helper
+before the name is confirmed, the next helper of the same session applies it,
+and requests nothing when the session already shows that title; until then it
+can overwrite a title set in between. When the completion mark cannot be
+written, a later helper of the same session may request the name again over a
+title changed since; that can happen at any time while that launch lives, not
+only at startup. Failed naming does not transfer to later sessions. Blank
+native names stay blank; native title events update the same bus owner.
 
 Before a managed interactive or lane launch, the wrapper idempotently ensures
 one exact global Grok permission rule for
 `MCPTool(sessionbus__sessionbus)` in the real `GROK_HOME/config.toml` (or
 the resolved user home's `.grok/config.toml`). This persistent config update is
-the native surface that applies to private-leader sessions. It preserves every
+the native surface that applies to leader sessions. It preserves every
 other config byte, uses Grok's active compact or structured permission
 representation, follows a config-file symlink, and publishes atomically while
 serializing concurrent wrapper starts through Grok's `.config-init.lock`. An
 invalid or unsupported config shape fails the launch without rewriting the
 file. Native deny and ask rules remain present, and Grok evaluates deny before
-ask before allow.
+ask before allow. From that same read, a managed interactive launch refuses
+before native starts when the config holds no `mcp_servers.sessionbus` entry,
+and names the installer. A managed interactive launch also refuses when the `sessionbus`
+entry is disabled in the user's Grok config (`enabled = false`, or its name in
+`disabled_mcp_servers`); `grok mcp enable sessionbus`, Grok's command for it
+in its 1.0.35 source, enables it again.
 
-The wrapper retains the exact `--allow` projection on its private leader for
+A lane retains the exact `--allow` projection on its private leader for
 compatibility, although public Grok 1.0.13 through 1.0.38 do not forward those
 top-level rules into leader sessions. Interactive caller allow, deny,
-permission-mode and bypass controls retain their bytes and order. A caller
-deny which the bridged native parser applies to the managed Sessionbus tool is
-rejected before the config write or any native launch; unrelated rules remain
-native-owned. `--yolo`/`--always-approve` and the config grant coexist. Help,
-version, and native subcommand passthrough do not touch the config.
+permission-mode and bypass controls reach the TUI with their bytes and order.
+Grok does not apply `--allow` and `--deny` given on the command line in leader
+mode (Grok's own behaviour per its 1.0.35 source; observed for one rule on Grok
+1.0.52); grok-peer passes them on unchanged; rules belong in Grok's config.
+`--yolo`/`--always-approve` and the config grant coexist. Help, version, and
+native subcommand passthrough do not touch the config.
 
 Grok leader mode currently ignores per-process `--plugin-dir`. Consequently
-the plugin is globally registered: ordinary `grok` discovers the generic skill
-and starts an inert helper, whose initialize/ping succeed and tools/list is
-empty. It creates no bus owner or native observer. Managed activation requires
-both this launch's exact private leader socket and native `GROK_SESSION_ID`.
-An inherited marker with a different leader stays inert.
+the plugin is globally registered and ordinary `grok` discovers the generic
+skill. The helper is registered in the user's Grok config, so ordinary `grok`
+starts it too; there it is inert: initialize/ping succeed and tools/list is
+empty, and it creates no bus owner or native observer. The registration hands
+the helper one value from the client that opens the session, the launch
+directory. Managed activation requires that this is the directory of a live
+`grok-peer` launch, holding the facts file the launcher wrote before it started
+Grok (bus socket, groups, requested name, working directory), and native
+`GROK_SESSION_ID`. The launch directory is created beside the bus socket; a
+managed launch refuses when that path contains `$`, which Grok would expand, or
+is not valid UTF-8, which Grok cannot pass on. Both restrict only where the
+Sessionbus socket lives, its runtime directory. The launcher refuses nothing
+about the session name, the groups or the working directory: the name and the
+working directory reach the helper byte for byte, and groups travel as the JSON
+list they are today.
+
+Grok's own leader outlasts a launch and serves other Grok clients as well. The
+wrapper prevents none of the following:
+
+- One helper exists per session, and the client that opened or loaded the
+  session last decides it. A second `grok-peer` launch that loads the same
+  session takes it over with its own groups and name, and the row goes when
+  that launch quits, even while the first TUI is open.
+- A plain `grok --leader` client that loads a managed session replaces its
+  helper with an inert one. The session is off the bus until a `grok-peer`
+  launch loads it again.
+- A session opened by a client that sends no helper definition (another ACP
+  client, for example) runs the leader's own copy with the environment of the
+  client that started the leader. If that was a `grok-peer` launch, the session
+  is managed with that launch's values while that launch lives.
+- The helper's observer is `grok agent --leader stdio`, started in the launch's
+  working directory with the helper's environment. It reaches the leader Grok
+  resolves from there; a leader chosen any other way is not followed. This
+  scope rests on the Grok 1.0.35 source, not on observation. If that directory
+  is gone, the helper publishes nothing. A session Grok runs without a leader
+  (a saved confining sandbox profile, a sandbox from environment or config, a
+  failed leader connect) has no row.
+
+Grok's leader can keep a session loaded, with its Sessionbus helper, after the
+TUI has quit. The helper therefore checks its launch every two seconds. Once
+the launcher has quit and removed its launch directory, the helper ends its
+Sessionbus presence and exits, so such a session's row retires a few seconds
+after `/quit` rather than at once. If Grok starts the helper again after that,
+it stays inactive: it offers no Sessionbus tool and publishes no presence.
 
 ## Lanes and delivery
 
@@ -104,8 +170,10 @@ Canceling a wait only cancels that wait. Worker retirement loses retained output
 `persistent` controls owner-exit lifetime and `auto_close_ms` controls post-native-
 terminal retirement. Every lane message starts or schedules native work.
 There is no wrapper database, durable output, journal or restart recovery.
-Native session history remains native-owned. The empty temporary naming claim
-contains no session/result metadata and is never reused by another launch.
+Native session history remains native-owned. The temporary naming claim in the
+launch directory records only the native session ID and whether the name was
+confirmed; it contains no result metadata and is never reused by another
+launch. The launcher removes the launch directory when it returns.
 
 Installed acceptance and retained historical evidence are recorded separately
 in `docs/designs/grok-0.5.0`; intermediate builds are not full acceptance.
@@ -121,41 +189,31 @@ their launch connection.
 
 ## Private leader loss (known native limitation)
 
-The private leader can exit while the TUI or a lane's `agent --leader stdio`
+Only a lane has a private leader. An interactive launch starts no leader and no
+startup hold of its own; it forwards signals to the TUI and exits with the
+TUI's own status.
+
+A lane's private leader can exit while the lane's `agent --leader stdio`
 bridge is attached: after a native update (the wrapper does not suppress
 updates), when a newer native client takes it over (per Grok 1.0.35 source), or
-when it is killed. The wrapper does not end the session for that. The TUI is
-left to Grok's own reconnect, and a lane's bridge to its bounded native
-reconnect. Losing the startup hold after the TUI has started does not end the
-session either: the hold only provides client presence during startup, and
-Sessionbus delivery uses a separate observer. Each such loss is reported on
-stderr after the TUI exits, and the launcher exits with the TUI's own status.
-Whether the session and its delivery continue correctly after a reconnect
-depends on the native release.
+when it is killed. The wrapper does not end the session for that. The bridge is
+left to its bounded native reconnect. Whether the session and its delivery
+continue correctly after a reconnect depends on the native release.
 
 Grok's reconnect path can start a detached `grok agent leader
 --no-exit-on-disconnect --relay-on-demand` on the same private socket. This was
-observed on Grok 1.0.44 after TERM to the leader. The replacement runs in its
-own process group under PID 1 and survives the launcher's teardown, which covers
-only the processes the launcher started. Native Grok has no connect-only client
-option and gives clients no request to stop a leader, and removing the private
-launch directory does not stop one. The wrapper does not search for or stop the
-replacement. Stop a leftover one by its exact PID after confirming its command
-line.
-
-After a reconnect, the replacement can also keep the session loaded and run the
-session's Sessionbus helper (the `sessionbus` MCP server), which outlives the
-TUI. The helper therefore checks its launch every two seconds. Once the launcher
-has quit and removed its private launch directory, the helper ends its
-Sessionbus presence and exits, so the session's row retires a few seconds after
-`/quit` rather than at once. A missing socket alone, as during a reconnect, does
-not end it. If Grok starts the helper again after that, it stays inactive: it
-offers no Sessionbus tool and publishes no presence. The replacement leader and
-such an inactive helper can remain running until stopped.
+observed on Grok 1.0.44 in an interactive launch with the former private
+leader, after TERM to that leader: the replacement ran in its own process group
+under PID 1 and survived the launcher's teardown. For a lane's bridge the same
+path is known from the Grok source only and has not been observed. The
+wrapper's teardown covers only the processes the wrapper started. Native Grok
+has no connect-only client option and gives clients no request to stop a
+leader. The wrapper does not search for or stop a replacement. Stop a leftover
+one by its exact PID after confirming its command line.
 
 The replacement starts without the wrapper's leader arguments. Per Grok 1.0.35
 source (not observed in use), its session-default permission mode therefore
-comes from `config.toml` instead of the lane's `permission_mode`. TUI sessions
-and resumed lanes re-send their mode when they reconnect. A fresh lane replayed
+comes from `config.toml` instead of the lane's `permission_mode`. Resumed
+lanes re-send their mode when they reconnect. A fresh lane replayed
 by the stdio bridge takes the config default instead. Permission rules,
 including the Sessionbus grant, come from the same config files in either case.

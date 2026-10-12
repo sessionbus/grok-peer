@@ -178,6 +178,10 @@ func fakeGrok() {
 				reply(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32603, "message": "rename refused"}})
 				continue
 			}
+			if os.Getenv("GROK_TEST_RENAME_UNSUCCESSFUL") != "" {
+				reply(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"success": false}})
+				continue
+			}
 			title, _ = params["title"].(string)
 			reply(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"success": true}})
 		case "_x.ai/sessions/list":

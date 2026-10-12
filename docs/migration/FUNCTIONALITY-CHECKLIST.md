@@ -10,11 +10,11 @@ acceptance is pending owner Grok authentication.
 
 | ID | Preserved functionality | Existing regression coverage | Installed evidence / limit |
 |---|---|---|---|
-| F01 | Complete archive install/update, native plugin/MCP entry/generic skill, private `grok-peer-mcp` alias, checksum and archive-role safety | package_test.go; scripts/release/grok_test.go, download_test.go, selection_test.go | Install and reinstall the exact archive in the real home; native plugin inventory, `uninstall --keep-data` and `install --trust`; only owned payload replaced. The baseline has no separate Grok uninstaller and none is added |
+| F01 | Complete archive install/update, native plugin/generic skill, the `sessionbus` MCP entry registered in the user's Grok config (since 2026-10-12; the plugin defines none), private `grok-peer-mcp` alias, checksum and archive-role safety | package_test.go; scripts/release/grok_test.go, download_test.go, selection_test.go | Install and reinstall the exact archive in the real home; native plugin inventory, `uninstall --keep-data` and `install --trust`, then `grok mcp add sessionbus -s user`; only owned payload and that one config entry replaced. The baseline has no separate Grok uninstaller and none is added |
 | F02 | One public binary, wrapper/native version and token-selected lane dispatch | cmd/grok-peer/main_test.go; version_test.go; common peerversion | Exact installed source/version and private alias |
 | F03 | Native argv ownership/order, literal --, repeated groups/name, `--yolo` -> `--always-approve`, native resume/continue | alias_values_test.go; peer_test.go; grok_test.go; lane_arguments_test.go | Preserve native selector and title semantics. Typed lane model follows native `agent` after extraction follow-up (LANE-MODEL-PLACEMENT.md); typed reasoning and raw `--agent`/`--no-plan`/`--no-subagents` remain unapplied by native agent mode |
-| F04 | Default native policy plus exact persistent `MCPTool(sessionbus__sessionbus)` config rule; reject defeating deny before config write or launch | config_permission_test.go; permission_test.go; peer_test.go; grok_test.go | Normal-policy native tool use; unrelated rules and native representation unchanged. Launch-scoped replacement remains peers issue 55 |
-| F05 | Ordinary Grok stays ordinary: global plugin starts an inert zero-tool helper, no bus owner or observer | package_test.go; cmd/grok-peer/main_test.go | Zero-input plain Grok has no managed marker, observer or bus row; global skill discovery remains visible |
+| F04 | Default native policy plus exact persistent `MCPTool(sessionbus__sessionbus)` config rule. The rejection of a defeating caller deny was removed by the owner's decision of 2026-10-12: caller flags are passed to Grok unchanged | config_permission_test.go; peer_test.go; grok_test.go | Normal-policy native tool use; unrelated rules and native representation unchanged. Launch-scoped replacement remains peers issue 55 |
+| F05 | Ordinary Grok stays ordinary: the helper registered in the user's Grok config starts inert with zero tools, no bus owner or observer | package_test.go; cmd/grok-peer/main_test.go | Zero-input plain Grok has no marker of a live managed launch, no observer and no bus row; global skill discovery remains visible |
 | F06 | Native identity/title, exclusive initial name claim, /new, rename, resume and fork | name_test.go; peer_test.go; grok_test.go | Exact native/public identity join; preserve native history |
 | F07 | Discovery, single/multiple/group sends, public schema/error semantics | peer_test.go; common MCP tests and public SDK | Native list/send with authenticated receiver correlation |
 | F08 | Zero-input lane open/readiness, spawn/resume | grok_test.go; review_readiness_test.go | Ready only on actual native confirmation; no model turn before run |
@@ -29,7 +29,7 @@ acceptance is pending owner Grok authentication.
 | F17 | Normal/failed startup, config failure before start, close, native death and owned cleanup | grok_test.go; peer_test.go; process_linux_test.go; process_darwin_test.go | Owned rows/processes absent; hard-failure descendant containment remains qualified |
 | F18 | Native history, persistence and independent auto-close policy | grok_test.go; common lane tests; retained acceptance notes | Close retains native history; no local policy scheduler, journal or durable output added |
 | F19 | Independent module/archive/CI/release and platform builds | architecture_test.go; version_test.go; package_test.go; release tests | Exact extracted archive and source; Linux/macOS amd64/arm64 builds; publication held |
-| F20 | Every original product/common runtime, asset, fixture and test preserved | PRESERVED-FILES.json and baseline | 89 protected files and 164 original test functions resolve locally or in exact peer-common. The later typed-model follow-up deliberately changes only `wrappers/grok/grok.go` and `grok/README.md` |
+| F20 | Every original product/common runtime, asset, fixture and test preserved, except tests that pinned superseded behaviour and two plugin assets that the same change removed | PRESERVED-FILES.json and baseline | 89 protected files and 164 original test functions resolved locally or in exact peer-common at extraction. The original startup-hold test `TestStartupHoldExitStopsInteractiveOwner` was replaced earlier, in `ee18477`. Tests that pinned other superseded behaviour (the private leader, the leader-socket equality, the empty initial-name claim, the caller-deny check and glob matcher) were removed or replaced in the change that moved the managed interactive session to Grok's own leader, the deny check by the owner's decision of 2026-10-12; all other original tests are preserved. The same change removed the plugin assets `grok/.mcp.json` and `grok/scripts/native-entry`: the helper is registered in the user's Grok config by the installer instead. The later typed-model follow-up deliberately changes only `wrappers/grok/grok.go` and `grok/README.md` |
 
 Coverage paths without a prefix are under `wrappers/grok/`. Shared support is
 pinned to peer-common `eb655f686e4456a4c1121054763318e3d27e89b0`; its tests run in
@@ -53,8 +53,9 @@ The build dependency pin on peer-common is separate from native client support.
 - Presence `running:false` alone is not native-idle evidence. `no_receipt` is
   uncertain and never permission to resend.
 - Grok leader mode ignores per-process `--plugin-dir`, so the plugin is globally
-  registered. Managed activation requires this launch's exact private leader
-  socket and native `GROK_SESSION_ID`.
+  registered. Since 2026-10-12 the interactive session runs on Grok's own
+  leader; managed activation requires the launch directory of a live
+  `grok-peer` launch with its facts file, and native `GROK_SESSION_ID`.
 - The managed permission rule is a persistent user-config change made only by
   managed launches; help, version and native passthrough do not write it.
 - Held lane skills under `docs/designs/grok-0.5.0` are retained for knowledge,

@@ -79,12 +79,56 @@ func lastEnvironmentValue(environment []string, name string) string {
 }
 
 func ensureSessionbusPermissionAt(home string) error {
+	_, err := ensureSessionbusConfigAt(home)
+	return err
+}
+
+// ensureManagedConfig is the interactive launch's config step: the permission rule as
+// for every managed launch and, from that same read, the helper's registration. Only
+// the installer writes the registration, so a config which decodes without the
+// mcp_servers.sessionbus table refuses the launch. So does one which disables that
+// entry in a form Grok reads: a boolean enabled = false in it, or its exact name in
+// a top-level disabled_mcp_servers list. Other shapes are not interpreted.
+func ensureManagedConfig(environment []string, cwd string) error {
+	home, err := resolvedGrokHome(environment, cwd)
+	if err != nil {
+		return err
+	}
+	parsed, err := ensureSessionbusConfigAt(home)
+	if err != nil {
+		return err
+	}
+	servers, _ := parsed.root["mcp_servers"].(map[string]any)
+	entry, registered := servers["sessionbus"].(map[string]any)
+	if !registered {
+		return fmt.Errorf("Grok config %s has no mcp_servers.sessionbus entry; run the grok-peer installer to register the Sessionbus helper", filepath.Join(home, grokConfigFile))
+	}
+	if enabled, boolean := entry["enabled"].(bool); boolean && !enabled {
+		return fmt.Errorf("Grok config %s has mcp_servers.sessionbus disabled by enabled = false; run grok mcp enable sessionbus to enable the Sessionbus helper", filepath.Join(home, grokConfigFile))
+	}
+	names, _ := parsed.root["disabled_mcp_servers"].([]any)
+	listed := false
+	for _, name := range names {
+		// Grok skips members that are not strings and still honours the others.
+		if text, isText := name.(string); isText && text == "sessionbus" {
+			listed = true
+		}
+	}
+	if listed {
+		return fmt.Errorf("Grok config %s names sessionbus in disabled_mcp_servers; run grok mcp enable sessionbus to enable the Sessionbus helper", filepath.Join(home, grokConfigFile))
+	}
+	return nil
+}
+
+// ensureSessionbusConfigAt returns the config as its one read decoded it. Adding the
+// permission rule changes no other field.
+func ensureSessionbusConfigAt(home string) (permissionConfig, error) {
 	if err := os.MkdirAll(home, 0700); err != nil {
-		return fmt.Errorf("create Grok home %s: %w", home, err)
+		return permissionConfig{}, fmt.Errorf("create Grok home %s: %w", home, err)
 	}
 	lock, err := acquireGrokConfigLock(home)
 	if err != nil {
-		return err
+		return permissionConfig{}, err
 	}
 	defer func() {
 		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
@@ -94,34 +138,34 @@ func ensureSessionbusPermissionAt(home string) error {
 	slot := filepath.Join(home, grokConfigFile)
 	dest, err := bindGrokConfigDestination(slot)
 	if err != nil {
-		return fmt.Errorf("bind Grok config %s: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("bind Grok config %s: %w", slot, err)
 	}
 	content, err := readGrokConfig(dest)
 	if err != nil {
-		return fmt.Errorf("read Grok config %s: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("read Grok config %s: %w", slot, err)
 	}
 	parsed, err := parsePermissionConfig(content)
 	if err != nil {
-		return fmt.Errorf("refusing to update Grok config %s: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("refusing to update Grok config %s: %w", slot, err)
 	}
 	if parsed.granted {
-		return nil
+		return parsed, nil
 	}
 	candidate, expected, err := addSessionbusPermission(content, parsed)
 	if err != nil {
-		return fmt.Errorf("refusing to update Grok config %s: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("refusing to update Grok config %s: %w", slot, err)
 	}
 	verified, err := parsePermissionConfig(candidate)
 	if err != nil {
-		return fmt.Errorf("refusing to update Grok config %s: generated TOML is invalid: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("refusing to update Grok config %s: generated TOML is invalid: %w", slot, err)
 	}
 	if !verified.granted || !reflect.DeepEqual(verified.root, expected) {
-		return fmt.Errorf("refusing to update Grok config %s: candidate changes fields beyond the exact Sessionbus allow rule", slot)
+		return permissionConfig{}, fmt.Errorf("refusing to update Grok config %s: candidate changes fields beyond the exact Sessionbus allow rule", slot)
 	}
 	if err := writeGrokConfigAtomically(slot, dest, content, candidate); err != nil {
-		return fmt.Errorf("update Grok config %s: %w", slot, err)
+		return permissionConfig{}, fmt.Errorf("update Grok config %s: %w", slot, err)
 	}
-	return nil
+	return parsed, nil
 }
 
 func acquireGrokConfigLock(home string) (*os.File, error) {

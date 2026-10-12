@@ -24,10 +24,7 @@ func TestLaunchEndedOnlyWhenLaunchDirectoryIsGone(t *testing.T) {
 	root := t.TempDir()
 	launch := filepath.Join(root, "grok-launch-1")
 	must(t, os.Mkdir(launch, 0o700))
-	socket := filepath.Join(launch, "grok-native.sock")
-	check(t, !launchEnded(socket), "missing socket with its launch directory present ended the launch")
-	must(t, os.WriteFile(socket, nil, 0o600))
-	check(t, !launchEnded(socket), "present launch ended")
+	check(t, !launchEnded(launch), "present launch ended")
 	// Any other stat error, here a directory that cannot be searched, is not the end.
 	locked := filepath.Join(root, "locked")
 	must(t, os.Mkdir(locked, 0o700))
@@ -35,26 +32,23 @@ func TestLaunchEndedOnlyWhenLaunchDirectoryIsGone(t *testing.T) {
 	must(t, os.Chmod(locked, 0))
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
 	if _, err := os.Stat(filepath.Join(locked, "grok-launch-2")); err != nil && !os.IsNotExist(err) {
-		check(t, !launchEnded(filepath.Join(locked, "grok-launch-2", "grok-native.sock")), "a stat error other than absence ended the launch")
+		check(t, !launchEnded(filepath.Join(locked, "grok-launch-2")), "a stat error other than absence ended the launch")
 	}
 	must(t, os.RemoveAll(launch))
-	check(t, launchEnded(socket), "removed launch directory not seen as ended")
-	check(t, !launchEnded("private"), "a relative marker's parent is the working directory")
+	check(t, launchEnded(launch), "removed launch directory not seen as ended")
 }
 
-func TestManagedLaunchContextFollowsTheDirectoryNotTheSocket(t *testing.T) {
+func TestManagedLaunchContextFollowsTheDirectoryNotItsContents(t *testing.T) {
 	shortLaunchPoll(t)
-	launch := filepath.Join(t.TempDir(), "grok-launch-1")
-	must(t, os.Mkdir(launch, 0o700))
-	socket := filepath.Join(launch, "grok-native.sock")
-	must(t, os.WriteFile(socket, nil, 0o600))
-	ctx, stop := WithManagedLaunch(context.Background(), managedPeerEnv(nil, testSessionID, socket))
+	root := t.TempDir()
+	launch := liveLaunch(t, launchFacts{Socket: filepath.Join(root, "bus")})
+	ctx, stop := WithManagedLaunch(context.Background(), managedPeerEnv(nil, testSessionID, launch))
 	defer stop()
-	// A native leader turnover can remove the socket while the launch continues.
-	must(t, os.Remove(socket))
+	// Admission read the facts once; only the launcher's removal of the directory ends the launch.
+	must(t, os.Remove(filepath.Join(launch, launchFactsFile)))
 	select {
 	case <-ctx.Done():
-		t.Fatal("a missing socket ended a live launch")
+		t.Fatal("a missing facts file ended a live launch")
 	case <-time.After(20 * launchPollInterval):
 	}
 	must(t, os.RemoveAll(launch))
@@ -70,9 +64,8 @@ func TestManagedLaunchEndRetiresPeer(t *testing.T) {
 	t.Setenv(host.SocketEnv, bus)
 	t.Setenv("GROK_TEST_RECORD", filepath.Join(root, "record"))
 	t.Setenv("GROK_TEST_SESSION_ID", testSessionID)
-	launch := filepath.Join(root, "grok-launch-1")
-	must(t, os.Mkdir(launch, 0o700))
-	env := managedPeerEnv(os.Environ(), testSessionID, filepath.Join(launch, "grok-native.sock"))
+	launch := liveLaunch(t, launchFacts{Socket: bus})
+	env := managedPeerEnv(os.Environ(), testSessionID, launch)
 	ctx, stop := WithManagedLaunch(context.Background(), env)
 	defer stop()
 	backend, err := NewPeerBackend(ctx, env)
@@ -97,12 +90,12 @@ func TestManagedLaunchEndRetiresPeer(t *testing.T) {
 }
 
 func TestManagedHelperIsInactiveAfterItsLaunchEnded(t *testing.T) {
-	launch := filepath.Join(t.TempDir(), "grok-launch-1")
-	socket := filepath.Join(launch, "grok-native.sock")
-	env := managedPeerEnv(nil, testSessionID, socket)
+	root := t.TempDir()
+	launch := liveLaunch(t, launchFacts{Socket: filepath.Join(root, "bus")})
+	env := managedPeerEnv(nil, testSessionID, launch)
+	check(t, ManagedHelper(env), "a helper of a live launch is not managed")
+	must(t, os.RemoveAll(launch))
 	check(t, !ManagedHelper(env), "a helper started after its launch ended is managed")
 	_, err := NewPeerBackend(context.Background(), env)
 	check(t, err != nil, "a backend was created for an ended launch")
-	must(t, os.Mkdir(launch, 0o700))
-	check(t, ManagedHelper(env), "a helper of a live launch is not managed")
 }
