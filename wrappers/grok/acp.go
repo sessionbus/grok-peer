@@ -149,6 +149,12 @@ func (c *acpClient) read(output io.ReadCloser) {
 			}
 			id, ok := numericACPID(frame.ID)
 			if !ok {
+				// This client issues integer IDs only, so a response with a string ID
+				// answers a request it did not send: Grok answers its own internal
+				// requests on this connection. It is skipped, not refused.
+				if !bytes.Equal(frame.ID, []byte("null")) && json.Unmarshal(frame.ID, new(string)) == nil {
+					continue
+				}
 				c.finish(errors.New("invalid Grok ACP response ID"))
 				return
 			}

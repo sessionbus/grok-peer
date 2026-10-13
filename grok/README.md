@@ -205,6 +205,14 @@ mode on (per Grok 1.0.35 source). Closing the lane ends that process. An
 interactive launch starts no leader and no startup hold of its own either; it
 forwards signals to the TUI and exits with the TUI's own status.
 
+Native Grok can answer its own internal requests on a lane's connection. On
+Grok 1.0.52 the lanes running at the time each received the answer to a
+request named `skills-reload` a few seconds after another Grok agent started;
+per Grok 1.0.35 source an agent sends itself that request when Grok's bundle
+directory is rewritten, which an agent does about once an hour. The wrapper's
+own requests carry integer IDs, so it skips a response whose ID is a string.
+Before, such a response ended the lane.
+
 A lane start may trigger native's own background update: a running lane is not
 restarted by it, and a lane started after the update has finished runs the new
 version (per Grok 1.0.35 source; the wrapper does not suppress updates).

@@ -312,6 +312,69 @@ func TestACPInvalidRequestIDShapesReplyAndContinue(t *testing.T) {
 	}
 }
 
+// Grok answers its own internal requests on this connection, with string IDs
+// this client never issues; the first line below is what Grok 1.0.52 wrote. A
+// response with a string ID is skipped, also when the string spells a pending
+// integer. The connection stays open and the waiting call gets its own answer.
+func TestACPSkipsResponsesWithStringIDs(t *testing.T) {
+	for name, line := range map[string]string{
+		"result": `{"jsonrpc":"2.0","id":"skills-reload","result":{"result":{"reloaded":1}}}`,
+		"error":  `{"jsonrpc":"2.0","id":"skills-reload","error":{"code":-32603,"message":"Internal error"}}`,
+		"digits": `{"jsonrpc":"2.0","id":"1","result":{"value":"not own"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, d, e, _ := acpPipe(t)
+			done := make(chan error, 1)
+			var result map[string]string
+			go func() { done <- c.request(context.Background(), "example", nil, &result) }()
+			f := readACP(t, d)
+			if string(f.ID) != "1" {
+				t.Fatalf("the request's ID: %s", f.ID)
+			}
+			if err := e.Encode(json.RawMessage(line)); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.Encode(map[string]any{"jsonrpc": "2.0", "id": f.ID, "result": map[string]string{"value": "own"}}); err != nil {
+				t.Fatalf("the connection ended at the response to another request: %v; the waiting call: %v", err, <-done)
+			}
+			if err := <-done; err != nil || result["value"] != "own" {
+				t.Fatalf("the waiting call: %v %v", err, result)
+			}
+			select {
+			case <-c.done:
+				t.Fatal("the connection ended after its own answer")
+			default:
+			}
+		})
+	}
+}
+
+// What is skipped is only a well-formed response with a string ID. A null ID,
+// an integer ID that is not pending and a string ID in a malformed envelope
+// still retire the connection.
+func TestACPResponsesOutsideTheSkipStayFatal(t *testing.T) {
+	for name, tc := range map[string]struct{ line, want string }{
+		"null id":                     {`{"jsonrpc":"2.0","id":null,"result":{}}`, "invalid Grok ACP response ID"},
+		"integer not pending":         {`{"jsonrpc":"2.0","id":41,"result":{}}`, "unmatched Grok ACP response"},
+		"string id, result and error": {`{"jsonrpc":"2.0","id":"skills-reload","result":{},"error":{"code":1,"message":"both"}}`, "invalid Grok ACP response envelope"},
+		"string id, neither":          {`{"jsonrpc":"2.0","id":"skills-reload"}`, "invalid Grok ACP response envelope"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, _, e, _ := acpPipe(t)
+			if err := e.Encode(json.RawMessage(tc.line)); err != nil {
+				t.Fatal(err)
+			}
+			<-c.done
+			c.mu.Lock()
+			err := c.err
+			c.mu.Unlock()
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("connection ended with %v, want %s", err, tc.want)
+			}
+		})
+	}
+}
+
 // Invalid framing and a failed reverse-request reply still retire the connection.
 func TestACPMalformedFramesAndReplyWriteFailureRemainFatal(t *testing.T) {
 	for name, line := range map[string]string{
