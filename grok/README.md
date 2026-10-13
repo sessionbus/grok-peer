@@ -157,7 +157,7 @@ writes for its client's model (per Grok 1.0.35 source). Typed
 `reasoning_effort` and the
 accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain
 top-level native options that native agent mode does not apply. A resumed lane's
-session request names no model; its session keeps the model stored with it (per
+session request names no model; its session restores the model stored with it (per
 Grok 1.0.35 source). The native grammar record, written when a lane still had
 a private leader, is `docs/designs/grok-0.5.0/LANE-MODEL-PLACEMENT.md` in the
 source repository.

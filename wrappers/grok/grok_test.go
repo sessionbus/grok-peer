@@ -317,7 +317,7 @@ func TestFreshLaneNativeLifecycle(t *testing.T) {
 	alias, err := sessionbusAlias()
 	must(t, err)
 	check(t, strings.Contains(string(open), `"command":"`+alias+`"`), "native MCP command is not the preflighted alias: %s", open)
-	check(t, !strings.Contains(string(open), "--session-id") && strings.Contains(string(open), `"sessionbus"`) && strings.Contains(string(open), `"SESSIONBUS_LANE_SOCKET"`) && strings.Contains(string(open), `"yoloMode":true`), "fresh open = %s", open)
+	check(t, !strings.Contains(string(open), "--session-id") && strings.Contains(string(open), `"sessionbus"`) && strings.Contains(string(open), `"SESSIONBUS_LANE_SOCKET"`) && strings.Contains(string(open), `"yoloMode":true`) && strings.Contains(string(open), `"modelId":"grok-4.6"`), "fresh open = %s", open)
 	idle, err := p.Deliver(context.Background(), delivery("idle"), nil)
 	var notRunning *sessionkit.ProtocolError
 	check(t, errors.As(err, &notRunning) && notRunning.Code == -32004 && idle.Disposition == "", "idle = %#v, %v", idle, err)
