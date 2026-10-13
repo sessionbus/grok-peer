@@ -42,7 +42,7 @@ func TestStaleRunDeliveryCannotSteerNextRun(t *testing.T) {
 	case err := <-stale:
 		var notRunning *kit.ProtocolError
 		check(t, errors.As(err, &notRunning) && notRunning.Code == -32004, "stale Run A delivery = %v", err)
-	case next := <-h.observerRead:
+	case next := <-h.primaryFrame():
 		t.Fatalf("stale Run A delivery reached native: %s %s", next.frame.Method, next.frame.Params)
 	}
 	h.p.mu.Lock()
@@ -59,7 +59,7 @@ func TestStaleRunDeliveryCannotSteerNextRun(t *testing.T) {
 	var receipt kit.DeliveryReceipt
 	must(t, json.Unmarshal(readWorkerResponse(t, h.bus, 4).Result, &receipt))
 	check(t, receipt.Disposition == "injected", "Run B delivery = %+v", receipt)
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 	h.answer(t, "p-g/2", "second-answer")
 	h.terminal(t, "p-g/2", "end_turn")
 	replyACP(t, h.primaryWrite, second, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/2"}})

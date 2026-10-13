@@ -56,7 +56,7 @@ func beginHeldPrompt(t *testing.T, h *continuationHarness, w *promptOwnershipWri
 	t.Helper()
 	writeWorkerRequest(t, h.bus, 2, "turn.execute", map[string]any{"session_id": testSessionID + "@local", "run_id": "g/1", "input": "owned-first"})
 	check(t, readWorkerResponse(t, h.bus, 2).Error == nil, "execute refused")
-	f := readACP(t, h.primaryRead)
+	f := h.readPrimary(t)
 	check(t, f.Method == "session/prompt", "not prompt: %s", f.Method)
 	awaitInterrupt(t, w.completed, "inner prompt write accepted")
 	h.p.mu.Lock()
@@ -75,14 +75,24 @@ func TestWorkerDeliveryUsesAdmittedOwnerBeforePromptWriteReturns(t *testing.T) {
 	h.running(t, "p-g/1", "owned-first")
 	awaitInterrupt(t, native.admitted, "primary native admission")
 	writeWorkerRequest(t, h.bus, 3, "message.deliver", delivery("once-marker"))
+	// The admitted owner takes the delivery while the prompt's write is still
+	// held; on the one connection its interject follows that write.
+	h.p.mu.Lock()
+	for native.delivery == nil {
+		changed := native.changed
+		h.p.mu.Unlock()
+		awaitInterrupt(t, changed, "delivery bound to the admitted owner")
+		h.p.mu.Lock()
+	}
+	h.p.mu.Unlock()
+	w.release()
 	interject := h.expectInterject(t, 3, nil)
 	h.notify(t, "_x.ai/session/interjection", map[string]any{"interjectionId": "message-1"})
 	result := readWorkerResponse(t, h.bus, 3)
 	var receipt kit.DeliveryReceipt
 	must(t, json.Unmarshal(result.Result, &receipt))
 	check(t, receipt.Disposition == "injected", "wrong receipt: %+v", result)
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
-	w.release()
+	replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 	h.answer(t, "p-g/1", "answer")
 	h.terminal(t, "p-g/1", "end_turn")
 	replyACP(t, h.primaryWrite, prompt, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
@@ -110,15 +120,11 @@ func TestPendingOwnerDeliveryCancellationWaitsForNativeAdmission(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("pre-admission delivery did not cancel")
 	}
-	// Cancellation before admission must not submit anything to the observer.
-	done := make(chan error, 1)
-	go func() { done <- h.p.observer.request(context.Background(), "barrier", nil, nil) }()
-	f := h.readObserver(t)
-	check(t, f.Method == "barrier", "pre-admission delivery submitted %s", f.Method)
-	replyACP(t, h.observerWrite, f, map[string]any{})
-	must(t, <-done)
-	h.running(t, "p-g/1", "owned-first")
+	// Cancellation before admission must not submit anything. The barrier needs
+	// the connection's write gate, so the prompt's write returns first.
 	w.release()
+	h.barrier(t)
+	h.running(t, "p-g/1", "owned-first")
 	h.answer(t, "p-g/1", "answer")
 	h.terminal(t, "p-g/1", "end_turn")
 	replyACP(t, h.primaryWrite, prompt, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
@@ -163,14 +169,11 @@ func TestPendingOwnerWaitsForPrimaryAdmissionOrLoss(t *testing.T) {
 			case <-time.After(3 * time.Second):
 				t.Fatal("delivery did not reach admission wait")
 			}
-			// Both streams are live; before the primary admission event the next
-			// observer frame must be our barrier, never the pending interject.
-			done := make(chan error, 1)
-			go func() { done <- h.p.observer.request(context.Background(), "barrier", nil, nil) }()
-			f := h.readObserver(t)
-			check(t, f.Method == "barrier", "interject preceded primary admission")
-			replyACP(t, h.observerWrite, f, map[string]any{})
-			must(t, <-done)
+			// Before the primary admission event the next native frame must be
+			// our barrier, never the pending interject. The barrier needs the
+			// connection's write gate, so the prompt's write returns first.
+			w.release()
+			h.barrier(t)
 			if lost {
 				h.p.primary.close()
 				select {
@@ -184,13 +187,12 @@ func TestPendingOwnerWaitsForPrimaryAdmissionOrLoss(t *testing.T) {
 				return
 			}
 			h.running(t, "p-g/1", "owned-first")
-			f = h.expectInterject(t, 0, returned)
+			f := h.expectInterject(t, 0, returned)
 			h.notify(t, "_x.ai/session/interjection", map[string]any{"interjectionId": "message-1"})
 			r := <-returned
 			must(t, r.err)
 			check(t, r.receipt.Disposition == "injected", "receipt=%+v", r)
-			replyACP(t, h.observerWrite, f, map[string]any{"result": map[string]string{"status": "queued"}})
-			w.release()
+			replyACP(t, h.primaryWrite, f, map[string]any{"result": map[string]string{"status": "queued"}})
 			h.answer(t, "p-g/1", "answer")
 			h.terminal(t, "p-g/1", "end_turn")
 			replyACP(t, h.primaryWrite, prompt, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
@@ -245,7 +247,7 @@ func TestPendingOwnerInterruptJoinsHeldPromptWrite(t *testing.T) {
 				check(t, owner == nil && retiring, "failed owner bypassed retirement")
 				return
 			}
-			check(t, readACP(t, h.primaryRead).Method == "session/cancel", "missing owned cancel after original write")
+			check(t, h.readPrimary(t).Method == "session/cancel", "missing owned cancel after original write")
 			must(t, <-returned)
 			must(t, native.Interrupt(context.Background()))
 			h.barrier(t) // No duplicate callback/fallback cancel.

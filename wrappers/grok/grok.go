@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	sessionkit "github.com/antst/sessionbus/bus/sdk/go"
 	"github.com/sessionbus/peer-common/host"
@@ -24,8 +23,6 @@ import (
 
 const Product = "grok-peer"
 const PrivateAlias = "grok-peer-mcp"
-
-const grokReadyInterval = 25 * time.Millisecond
 
 var command = exec.Command
 var executable = os.Executable
@@ -42,10 +39,7 @@ type Wrapper struct {
 	endpoint      *grokEndpoint
 	mu            sync.Mutex
 	primary       *acpClient
-	observer      *acpClient
 	child         *nativeProcess
-	leader        *nativeProcess
-	watcher       *nativeProcess
 	sessionID     string
 	run           *sessionkit.Run
 	pendingPrompt *nativePrompt
@@ -120,7 +114,7 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	if err != nil {
 		return sessionkit.OpenResult{}, err
 	}
-	primaryArgs, err := launchArguments(request, leaderSocket(p.socket, p.key))
+	primaryArgs, err := launchArguments(request)
 	if err != nil {
 		return sessionkit.OpenResult{}, err
 	}
@@ -140,42 +134,25 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	p.endpoint = endpoint
 	p.mu.Unlock()
 
-	leader, err := startLeader(p.ctx, p.socket, p.key, request.Open.Cwd, request.Open.PermissionMode, nativeEnv)
-	if err != nil {
-		return result, err
-	}
-	hold, holdProcess, err := p.startObserverClient(ctx, request.Open.Cwd)
-	if err != nil {
-		stopAux(leader)
-		return result, err
-	}
-	releaseHold := func() {
-		hold.close()
-		stopAux(holdProcess)
-	}
-	fail := func(cause error) error {
-		releaseHold()
-		stopAux(leader)
-		return cause
-	}
+	// One native process owns the session and this one connection: there is no
+	// leader and nothing else attaches.
 	primaryCommand := command(grokExecutable(nativeEnv, request.Open.Cwd), primaryArgs...)
 	primaryCommand.Dir, primaryCommand.Stderr = request.Open.Cwd, os.Stderr
 	primaryCommand.Env = nativeEnv
 	child, input, output, err := startACPProcess(primaryCommand)
 	if err != nil {
-		return sessionkit.OpenResult{}, fail(fmt.Errorf("start Grok primary: %w", err))
+		return sessionkit.OpenResult{}, fmt.Errorf("start Grok primary: %w", err)
 	}
 	primary := newACPClient(acpPrimary, input, output, p.receive)
 	p.mu.Lock()
-	p.primary, p.child, p.leader = primary, child, leader
+	p.primary, p.child = primary, child
 	p.mu.Unlock()
 	if err = initializeACP(ctx, primary); err == nil {
 		err = p.openSession(ctx, primary, request, alias, endpoint.Path)
 	}
 	if err == nil {
-		err = p.startObserver(ctx, request.Open.Cwd, name)
+		err = p.rename(ctx, primary, name)
 	}
-	releaseHold()
 	if err != nil {
 		return sessionkit.OpenResult{}, err
 	}
@@ -212,12 +189,21 @@ func (p *Wrapper) commitOpen(ctx context.Context, stopStartup func() bool) error
 
 func (p *Wrapper) openSession(ctx context.Context, primary *acpClient, request sessionkit.OpenRequest, alias, laneSocket string) error {
 	params := map[string]any{"cwd": request.Open.Cwd, "mcpServers": []any{mcpServer(alias, laneSocket)}}
+	meta := map[string]any{}
 	if request.Open.PermissionMode != "" {
-		params["_meta"] = map[string]bool{"yoloMode": request.Open.PermissionMode == "bypassPermissions"}
+		meta["yoloMode"] = request.Open.PermissionMode == "bypassPermissions"
 	}
 	method := "session/new"
 	if request.ResumeSessionID != "" {
 		method, params["sessionId"] = "session/load", request.ResumeSessionID
+	} else if request.Open.Model != "" {
+		// A leader wrote the client's model into this request. Without one the
+		// wrapper does: by Grok's 1.0.35 source a campaign default replaces a
+		// model that only the process default names.
+		meta["modelId"] = request.Open.Model
+	}
+	if len(meta) > 0 {
+		params["_meta"] = meta
 	}
 	var opened struct {
 		SessionID string `json:"sessionId"`
@@ -254,62 +240,6 @@ func (p *Wrapper) openSession(ctx context.Context, primary *acpClient, request s
 	return p.endpoint.waitReady(ctx)
 }
 
-func startLeader(ctx context.Context, socket, key, cwd, permission string, environment []string) (*nativeProcess, error) {
-	arguments := sessionbusLeaderPolicy()
-	if permission != "" {
-		arguments = append(arguments, "--permission-mode", permission)
-	}
-	return startLeaderWithPolicy(ctx, socket, key, cwd, arguments, environment)
-}
-func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy, environment []string) (*nativeProcess, error) {
-	path := leaderSocket(socket, key)
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	_ = os.Remove(path)
-	arguments := slices.Clone(policy)
-	arguments = append(arguments, "agent", "leader", "--leader-socket", path, "--relay-on-demand")
-	cmd := command(grokExecutable(environment, cwd), arguments...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = cwd, environment, os.Stderr, os.Stderr
-	process, err := startNative(cmd)
-	if err != nil {
-		return nil, err
-	}
-	deadline := time.NewTimer(15 * time.Second)
-	defer deadline.Stop()
-	tick := time.NewTicker(grokReadyInterval)
-	defer tick.Stop()
-	for {
-		select {
-		case <-process.done:
-			return nil, fmt.Errorf("Grok leader exited: %v", process.err)
-		case <-ctx.Done():
-			stopAux(process)
-			return nil, ctx.Err()
-		case <-deadline.C:
-			_ = process.cmd.Process.Signal(syscall.SIGKILL)
-			<-process.done
-			return nil, errors.New("Grok leader socket was not ready")
-		case <-tick.C:
-			if grokSocketReady(path) {
-				return process, nil
-			}
-		}
-	}
-}
-
-func (p *Wrapper) startObserverClient(ctx context.Context, cwd string, notify ...func(acpFrame)) (*acpClient, *nativeProcess, error) {
-	args := []string{"--leader-socket", leaderSocket(p.socket, p.key), "agent", "--leader", "stdio"}
-	environment := nativeEnvironment()
-	cmd := command(grokExecutable(environment, cwd), args...)
-	cmd.Dir, cmd.Env, cmd.Stderr = cwd, environment, os.Stderr
-	var callback func(acpFrame)
-	if len(notify) > 0 {
-		callback = notify[0]
-	}
-	return startObserverClient(p.ctx, ctx, cmd, callback)
-}
-
 func startObserverClient(lifetimeCtx, requestCtx context.Context, cmd *exec.Cmd, notify func(acpFrame)) (*acpClient, *nativeProcess, error) {
 	process, input, output, err := startACPProcess(cmd)
 	if err != nil {
@@ -331,27 +261,17 @@ func startObserverClient(lifetimeCtx, requestCtx context.Context, cmd *exec.Cmd,
 	return client, process, nil
 }
 
-func (p *Wrapper) startObserver(ctx context.Context, cwd, title string) error {
-	observer, process, err := p.startObserverClient(ctx, cwd)
-	if err != nil {
-		return fmt.Errorf("start Grok observer: %w", err)
-	}
+// rename gives the session the lane's name on the same connection, before any
+// prompt.
+func (p *Wrapper) rename(ctx context.Context, primary *acpClient, title string) error {
 	var renamed struct {
 		Success bool `json:"success"`
 	}
-	err = observer.request(ctx, "_x.ai/session/rename", map[string]string{"sessionId": p.sessionID, "title": title}, &renamed)
+	err := primary.request(ctx, "_x.ai/session/rename", map[string]string{"sessionId": p.sessionID, "title": title}, &renamed)
 	if err == nil && !renamed.Success {
 		err = errors.New("Grok did not apply the session title")
 	}
-	if err != nil {
-		observer.close()
-		stopAux(process)
-		return err
-	}
-	p.mu.Lock()
-	p.observer, p.watcher = observer, process
-	p.mu.Unlock()
-	return nil
+	return err
 }
 
 func initializeACP(ctx context.Context, client *acpClient) error {
@@ -644,20 +564,15 @@ func (p *Wrapper) Close(ctx context.Context, _ sessionkit.SessionCloseRequest) e
 
 func (p *Wrapper) closeProcesses(ctx context.Context) error {
 	p.mu.Lock()
-	primary, observer, child, watcher, leader, id, endpoint := p.primary, p.observer, p.child, p.watcher, p.leader, p.sessionID, p.endpoint
+	primary, child, id, endpoint := p.primary, p.child, p.sessionID, p.endpoint
 	opened := p.opened
 	p.mu.Unlock()
 	abort := func() {
 		if primary != nil {
 			primary.close()
 		}
-		if observer != nil {
-			observer.close()
-		}
-		for _, process := range []*nativeProcess{child, watcher, leader} {
-			if process != nil {
-				_ = process.cmd.Process.Kill()
-			}
+		if child != nil {
+			_ = child.cmd.Process.Kill()
 		}
 	}
 	stop := context.AfterFunc(ctx, abort)
@@ -682,23 +597,12 @@ func (p *Wrapper) closeProcesses(ctx context.Context) error {
 	if child != nil {
 		failures = append(failures, child.Wait())
 	}
-	if observer != nil {
-		_ = observer.input.Close()
-		<-observer.done
-	}
-	if watcher != nil {
-		failures = append(failures, watcher.Wait())
-	}
-	failures = append(failures, closeNative("leader", leader))
 	if endpoint != nil {
 		failures = append(failures, endpoint.Close())
 	}
 	if p.cancel != nil {
 		p.cancel()
 	}
-	path := leaderSocket(p.socket, p.key)
-	failures = appendRemoveError(failures, path)
-	failures = appendRemoveError(failures, strings.TrimSuffix(path, ".sock")+".lock")
 	return errors.Join(failures...)
 }
 
@@ -744,34 +648,6 @@ func reaped(process *nativeProcess) bool {
 	}
 }
 
-func stopNative(process *nativeProcess) error {
-	if reaped(process) {
-		return nil
-	}
-	if err := process.cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
-	<-process.done
-	return nil
-}
-
-func closeNative(role string, process *nativeProcess) error {
-	if process == nil {
-		return nil
-	}
-	if err := stopNative(process); err != nil {
-		return fmt.Errorf("close Grok %s: %w", role, err)
-	}
-	return nil
-}
-
-func appendRemoveError(failures []error, path string) []error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return append(failures, err)
-	}
-	return failures
-}
-
 func startNative(cmd *exec.Cmd) (*nativeProcess, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -808,16 +684,7 @@ func mcpServer(alias, socket string) map[string]any {
 	return map[string]any{"name": "sessionbus", "command": alias, "args": []string{}, "env": []map[string]string{{"name": mcp.LaneSocketEnv, "value": socket}}}
 }
 
-func leaderSocket(socket, key string) string {
-	return filepath.Join(filepath.Dir(socket), "grok-"+key+".sock")
-}
-
-func grokSocketReady(path string) bool {
-	info, err := os.Lstat(path)
-	return err == nil && info.Mode()&os.ModeSocket != 0
-}
-
-func launchArguments(request sessionkit.OpenRequest, leader string) ([]string, error) {
+func launchArguments(request sessionkit.OpenRequest) ([]string, error) {
 	extra, err := extraArguments(request.Open.Arguments)
 	if err != nil {
 		return nil, err
@@ -832,11 +699,13 @@ func launchArguments(request sessionkit.OpenRequest, leader string) ([]string, e
 	// Accepted extras are top-level native options. Native agent mode reads its
 	// model only from the agent subcommand's own -m, so it follows "agent".
 	arguments = append(arguments, extra...)
-	arguments = append(arguments, "--leader-socket", leader, "agent")
+	arguments = append(arguments, "agent")
 	if request.Open.Model != "" {
 		arguments = append(arguments, "-m", request.Open.Model)
 	}
-	return append(arguments, "--leader", "stdio"), nil
+	// Explicit: Grok's config can turn leader mode on, and a lane must not join
+	// the user's own leader.
+	return append(arguments, "--no-leader", "stdio"), nil
 }
 
 var argumentRules = []host.ArgumentRule{

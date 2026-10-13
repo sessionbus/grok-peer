@@ -17,7 +17,7 @@ func TestReviewTerminalMismatchCannotReleaseLiveContinuation(t *testing.T) {
 	h.notify(t, "_x.ai/session/interjection", map[string]any{"interjectionId": "message-1"})
 	readWorkerResponse(t, h.bus, 3)
 	h.running(t, "held-fallback", params.Text)
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 	h.barrier(t)
 	// Original RPC arrives after actual fallback admission, contradicting its
 	// native prompt identity. Fallback deliberately has no terminal.

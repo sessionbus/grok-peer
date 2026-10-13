@@ -42,7 +42,7 @@ func TestResidentForwarderEOFCancelsCallerWaitWithoutAck(t *testing.T) {
 	var output bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		done <- forwardLane(context.Background(), endpoint.Path, nativeHelperIdentity{"native", leaderSocket(p.socket, p.key)}, input, &output)
+		done <- forwardLane(context.Background(), endpoint.Path, nativeHelperIdentity{"native"}, input, &output)
 	}()
 	_, err = io.WriteString(writer, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sessionbus","arguments":{"action":"wait","arguments":{"session_id":"child@local","run_id":"g/1"}}}}`+"\n")
 	must(t, err)

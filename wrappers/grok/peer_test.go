@@ -689,7 +689,7 @@ func TestHelperTakesLaunchFactsFromTheFileNotItsEnvironment(t *testing.T) {
 	facts := launchFacts{Socket: socket, Groups: []string{"team$HOME", "${SESSIONBUS_GROUPS}"}, Name: "name$HOME ${SESSIONBUS_SESSION_NAME}", Cwd: work}
 	env := managedPeerEnv(os.Environ(), testSessionID, liveLaunch(t, facts))
 	// Grok's own leader names its socket as it likes; the helper no longer compares it.
-	env = setEnvironment(env, grokLeaderSocketEnv, filepath.Join(root, "another-leader.sock"))
+	env = setEnvironment(env, "GROK_LEADER_SOCKET", filepath.Join(root, "another-leader.sock"))
 	backend, err := NewPeerBackend(context.Background(), env)
 	must(t, err)
 	defer backend.Shutdown()
@@ -924,21 +924,6 @@ func TestStopAuxSkipsReapedProcessGroup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("owned live group survived teardown")
 	}
-}
-
-func TestLeaderCreatesDefaultStateRoot(t *testing.T) {
-	root := filepath.Join(testsocket.Directory(t), "state")
-	recordPath := filepath.Join(t.TempDir(), "record")
-	t.Setenv("GROK_TEST_RECORD", recordPath)
-	t.Setenv(host.SocketEnv, "")
-	t.Setenv("XDG_RUNTIME_DIR", root)
-	socket := sessionkit.Socket()
-	check(t, !exists(filepath.Dir(socket)), "default run directory already exists")
-	leader, err := startLeader(context.Background(), socket, host.LaunchTokenDigest(testSessionID), t.TempDir(), "default", os.Environ())
-	must(t, err)
-	check(t, grokSocketReady(leaderSocket(socket, host.LaunchTokenDigest(testSessionID))), "leader socket was not created")
-	check(t, containsStart(records(t, recordPath), "--allow", "MCPTool(sessionbus__sessionbus)", "--permission-mode", "default", "agent", "leader"), "lane leader policy missing: %s", records(t, recordPath))
-	must(t, closeNative("leader", leader))
 }
 
 func TestExactRosterAuthority(t *testing.T) {

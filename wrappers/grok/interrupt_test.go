@@ -62,7 +62,7 @@ func TestWorkerInterruptJoinsCompletedWriteBeforeRunReturn(t *testing.T) {
 	native := h.p.pendingPrompt
 	h.p.mu.Unlock()
 	writeWorkerRequest(t, h.bus, 3, "turn.interrupt", map[string]string{"session_id": testSessionID + "@local"})
-	check(t, readACP(t, h.primaryRead).Method == "session/cancel", "missing native cancel")
+	check(t, h.readPrimary(t).Method == "session/cancel", "missing native cancel")
 	awaitInterrupt(t, w.completed, "inner cancel Write accepted")
 	h.answer(t, "p-g/1", "interrupted-answer")
 	h.terminal(t, "p-g/1", "cancelled")
@@ -97,13 +97,13 @@ func TestSeedInterruptCallbackAndFallbackShareOneCancel(t *testing.T) {
 	d := delivery("owned-seed")
 	d.RunID = "g/1"
 	writeWorkerRequest(t, h.bus, 2, "message.deliver", d)
-	prompt := readACP(t, h.primaryRead)
+	prompt := h.readPrimary(t)
 	var params struct{ Prompt []struct{ Text string } }
 	must(t, json.Unmarshal(prompt.Params, &params))
 	h.running(t, "seed-native", params.Prompt[0].Text)
 	awaitInterrupt(t, entered, "seed ReportDelivery")
 	writeWorkerRequest(t, h.bus, 3, "turn.interrupt", map[string]string{"session_id": testSessionID + "@local"})
-	check(t, readACP(t, h.primaryRead).Method == "session/cancel", "missing first cancel")
+	check(t, h.readPrimary(t).Method == "session/cancel", "missing first cancel")
 	check(t, readWorkerResponse(t, h.bus, 3).Error == nil, "interrupt callback incomplete")
 	once.Do(func() { close(release) })
 	check(t, readWorkerResponse(t, h.bus, 2).Error == nil, "seed receipt failed")

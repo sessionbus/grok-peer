@@ -191,15 +191,15 @@ func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text
 	case <-gate:
 	}
 	p.mu.Lock()
-	t, observer := p.pendingPrompt, p.observer
-	if p.closing || p.nativeFailure != nil || p.run != run || t == nil || observer == nil || t.retiring {
+	t := p.pendingPrompt
+	if p.closing || p.nativeFailure != nil || p.run != run || t == nil || t.retiring {
 		p.mu.Unlock()
 		gate <- struct{}{}
 		return kit.DeliveryReceipt{}, host.NotRunning()
 	}
 	p.mu.Unlock()
-	// The primary stream is the admission authority. The observer must never
-	// submit an interject into native idle while this prompt is still starting.
+	// The prompt's own stream is the admission authority. An interject must never
+	// reach native idle while this prompt is still starting.
 	if err := t.admission(ctx); err != nil {
 		gate <- struct{}{}
 		if ctx.Err() != nil {
@@ -235,7 +235,7 @@ func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text
 				Status string `json:"status"`
 			} `json:"result"`
 		}
-		err := observer.requestSubmitting(rpcCtx, "_x.ai/interject", map[string]string{"sessionId": t.sessionID, "interjectionId": d.id, "text": d.text}, &result, nil, func() error {
+		err := t.client.requestSubmitting(rpcCtx, "_x.ai/interject", map[string]string{"sessionId": t.sessionID, "interjectionId": d.id, "text": d.text}, &result, nil, func() error {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			if err := ctx.Err(); err != nil {
@@ -275,7 +275,6 @@ func (p *Wrapper) deliverActive(ctx context.Context, r kit.DeliveryRequest, text
 			return
 		case <-t.client.done:
 		case <-rpcCtx.Done():
-		case <-observer.done:
 		}
 		p.mu.Lock()
 		abort = t.delivery == d
