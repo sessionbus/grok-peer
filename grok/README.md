@@ -146,6 +146,10 @@ Use the single public `sessionbus__sessionbus` tool with `{action, arguments}`.
 No product-specific lane skill is installed. The skill documents
 spawn/start/run/status/wait/ack/interrupt/close/forget and completion pointers.
 
+A lane runs `grok` from the Sessionbus daemon service's `PATH` and, when that
+`PATH` has none, `bin/grok` in Grok's home (`$GROK_HOME`, default `~/.grok`); a
+Grok installed elsewhere with `GROK_BIN_DIR` must be on the service `PATH`.
+
 A fresh lane's typed `model` is passed to the native `agent` subcommand, which
 the private leader applies to the new session. Typed `reasoning_effort` and the
 accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain top-level
