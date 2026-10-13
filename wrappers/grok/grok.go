@@ -158,7 +158,7 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 		stopAux(leader)
 		return cause
 	}
-	primaryCommand := command("grok", primaryArgs...)
+	primaryCommand := command(grokExecutable(nativeEnv, request.Open.Cwd), primaryArgs...)
 	primaryCommand.Dir, primaryCommand.Stderr = request.Open.Cwd, os.Stderr
 	primaryCommand.Env = nativeEnv
 	child, input, output, err := startACPProcess(primaryCommand)
@@ -269,7 +269,7 @@ func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy,
 	_ = os.Remove(path)
 	arguments := slices.Clone(policy)
 	arguments = append(arguments, "agent", "leader", "--leader-socket", path, "--relay-on-demand")
-	cmd := command("grok", arguments...)
+	cmd := command(grokExecutable(environment, cwd), arguments...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = cwd, environment, os.Stderr, os.Stderr
 	process, err := startNative(cmd)
 	if err != nil {
@@ -300,8 +300,9 @@ func startLeaderWithPolicy(ctx context.Context, socket, key, cwd string, policy,
 
 func (p *Wrapper) startObserverClient(ctx context.Context, cwd string, notify ...func(acpFrame)) (*acpClient, *nativeProcess, error) {
 	args := []string{"--leader-socket", leaderSocket(p.socket, p.key), "agent", "--leader", "stdio"}
-	cmd := command("grok", args...)
-	cmd.Dir, cmd.Env, cmd.Stderr = cwd, nativeEnvironment(), os.Stderr
+	environment := nativeEnvironment()
+	cmd := command(grokExecutable(environment, cwd), args...)
+	cmd.Dir, cmd.Env, cmd.Stderr = cwd, environment, os.Stderr
 	var callback func(acpFrame)
 	if len(notify) > 0 {
 		callback = notify[0]
@@ -857,6 +858,24 @@ var argumentRules = []host.ArgumentRule{
 
 func extraArguments(arguments []string) ([]string, error) {
 	return host.BuildArguments(arguments, argumentRules)
+}
+
+// grokExecutable names what a lane start runs. While the worker's PATH has a
+// grok it is the bare name, so that start is the one it always was. Only when
+// PATH has none is it bin/grok in Grok's own home, where Grok installs and
+// updates itself, if that is an executable file. In every other case it is the
+// bare name again and the start fails with its usual error. environment and
+// cwd are the native child's, so the home is the one that child will use.
+func grokExecutable(environment []string, cwd string) string {
+	if _, err := exec.LookPath("grok"); !errors.Is(err, exec.ErrNotFound) {
+		return "grok"
+	}
+	if home, err := resolvedGrokHome(environment, cwd); err == nil {
+		if installed, err := exec.LookPath(filepath.Join(home, "bin", "grok")); err == nil {
+			return installed
+		}
+	}
+	return "grok"
 }
 
 func nativeEnvironment() []string {
