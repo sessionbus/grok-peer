@@ -91,6 +91,19 @@ config. The Grok 1.0.35 source lists caller `--allow` and `--deny` as
 unsupported for a leader client; on Grok 1.0.52 one deny rule was observed not
 to deny. A future launch-scoped replacement is tracked in peers issue 55.
 
+On 2026-10-13 on UMKA, Grok 1.0.52 wrote
+`{"jsonrpc":"2.0","id":"skills-reload","result":{"result":{"reloaded":1}}}` to the
+ACP output of two idle lanes, 2.79 s after another Grok agent was started, 63
+minutes after the previous rewrite of Grok's `bundled` directory. At that
+previous rewrite, of 434 files, the wrapper's reader had refused a 73-byte
+response in three lanes about two seconds later; its bytes were not kept. Per
+Grok 1.0.35 source an agent renews the bundle once an hour, every agent
+watches that directory for skills, and on a change it injects a request with a
+string ID into its own input and answers it on its output. The wrapper's ACP
+reader accepted integer response IDs only and ended the connection; it now
+skips a response whose ID is a string. Evidence:
+`/home/antst/sessionbus-evidence/grok-full-matrix-run-dev2-20261013/NOLEADER-ROLLOUT-DC2/DIAGNOSTIC-REFUSEDLINE-45B/TIMED-RESULT-FROZEN`.
+
 Installed acceptance on UMKA used signed source
 `e26da0b885126589d30ff5ac715b3b214fc33c97` and native Grok 1.0.34. The first
 managed start appended exactly the compact permission block to a config with
