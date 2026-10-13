@@ -72,8 +72,8 @@ For v0.5.9, authenticated field-free validation ran on the permanent
 development host (Sessionbus daemon build c9792c31, the v0.5.9 runtime) with
 grok-peer builds 90784abb and f098af40 (the v0.5.9 runtime).
 Interactive, managed-lane, persistent-lane, owner-exit, permission and lifecycle
-scenarios passed, except the private-leader respawn residue described under
-[Private leader loss](grok/README.md) and in the v0.5.9 release notes. Later
+scenarios passed, except the private-leader respawn residue described in the
+v0.5.9 release notes. Later
 releases record their own evidence and limits in [docs/releases](docs/releases).
 This is scoped evidence, not blanket acceptance, and historical pre-split
 results are not rebound to it.

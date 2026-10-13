@@ -80,9 +80,10 @@ identity and byte comparison refuses a detected concurrent in-place native
 edit, without claiming that the advisory lock eliminates every native writer
 race. Help, version and native subcommand passthrough remain read-only.
 
-The lane's private-leader `--allow MCPTool(sessionbus__sessionbus)` argv is
-retained as a compatibility projection but is inert in the bracketed public
-versions. Interactive caller allow/deny, permission mode and bypass controls
+Since 2026-10-13 a lane is one native process without a leader and passes no
+`--allow` of its own: the Grok 1.0.35 source does not wire command-line rules
+into the `agent` subcommand, so the config rule is the lane's grant.
+Interactive caller allow/deny, permission mode and bypass controls
 retain native ownership and reach the TUI unchanged. Since 2026-10-12 the
 wrapper no longer checks a caller deny against the managed tool: the
 interactive session runs on Grok's own leader, and rules belong in Grok's

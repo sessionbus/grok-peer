@@ -18,11 +18,12 @@ import (
 )
 
 type continuationHarness struct {
-	p                           *Wrapper
-	bus                         *workerReader
-	primaryRead                 *json.Decoder
-	observerRead                <-chan continuationACPRead
-	primaryWrite, observerWrite *json.Encoder
+	p            *Wrapper
+	bus          *workerReader
+	primaryRead  <-chan continuationACPRead
+	primaryWant  chan<- struct{}
+	primaryAsked bool
+	primaryWrite *json.Encoder
 }
 
 func newContinuationHarness(t *testing.T, configure ...func(*grokSeedProduct)) *continuationHarness {
@@ -35,10 +36,7 @@ func newContinuationHarness(t *testing.T, configure ...func(*grokSeedProduct)) *
 	p := &Wrapper{sessionID: testSessionID}
 	rr, rw := io.Pipe()
 	sr, sw := io.Pipe()
-	or, ow := io.Pipe()
-	osr, osw := io.Pipe()
 	p.primary = newACPClient(acpPrimary, rw, sr, p.receive)
-	p.observer = newACPClient(acpObserver, ow, osr, nil)
 	product := &grokSeedProduct{Wrapper: p, returned: make(chan error, 8)}
 	for _, apply := range configure {
 		apply(product)
@@ -56,21 +54,18 @@ func newContinuationHarness(t *testing.T, configure ...func(*grokSeedProduct)) *
 	writeWorkerRequest(t, reader, 1, "session.open", map[string]any{"name": "continuation@local", "groups": []string{}, "open": map[string]any{}})
 	opened := readWorkerResponse(t, reader, 1)
 	check(t, opened.Error == nil, "Open failed: %s", opened.Error)
-	observerRead, stopReaders, joinReaders := continuationReaders(reader, json.NewDecoder(or))
+	primaryRead, primaryWant, stopReaders, joinReaders := continuationReaders(reader, json.NewDecoder(rr))
 	t.Cleanup(func() {
 		stopReaders()
 		_ = c.Close()
 		p.primary.close()
-		p.observer.close()
 		rr.Close()
 		sw.Close()
-		or.Close()
-		osw.Close()
 		joinReaders()
 		<-served
 		l.Close()
 	})
-	return &continuationHarness{p, reader, json.NewDecoder(rr), observerRead, json.NewEncoder(sw), json.NewEncoder(osw)}
+	return &continuationHarness{p: p, bus: reader, primaryRead: primaryRead, primaryWant: primaryWant, primaryWrite: json.NewEncoder(sw)}
 }
 
 // currentRun is the Run the SDK would capture for a delivery dispatched now.
@@ -97,14 +92,17 @@ func (h *continuationHarness) barrier(t *testing.T) {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- h.p.primary.request(context.Background(), "barrier", nil, nil) }()
-	replyACP(t, h.primaryWrite, readACP(t, h.primaryRead), map[string]any{})
+	// The one connection is ordered: anything native was sent first shows here.
+	f := h.readPrimary(t)
+	check(t, f.Method == "barrier", "native received %s before the barrier", f.Method)
+	replyACP(t, h.primaryWrite, f, map[string]any{})
 	must(t, <-done)
 }
 func (h *continuationHarness) start(t *testing.T, id int, key, text string) acpFrame {
 	t.Helper()
 	writeWorkerRequest(t, h.bus, id, "turn.execute", map[string]any{"session_id": testSessionID + "@local", "run_id": key, "input": text})
 	check(t, readWorkerResponse(t, h.bus, id).Error == nil, "execute refused")
-	f := readACP(t, h.primaryRead)
+	f := h.readPrimary(t)
 	check(t, f.Method == "session/prompt", "unexpected additional native submission: %s", f.Method)
 	h.running(t, "p-"+key, text)
 	h.barrier(t)
@@ -142,7 +140,7 @@ func testContinuation(t *testing.T, fallback, lost bool) {
 	var admitted kit.DeliveryReceipt
 	must(t, json.Unmarshal(receipt.Result, &admitted))
 	check(t, admitted.Disposition == "injected", "primary actor acknowledgement not retained: %s", receipt.Result)
-	// The observer's RPC response is deliberately still withheld here.
+	// The interject's RPC response is deliberately still withheld here.
 	if fallback {
 		h.running(t, "native-continuation", params.Text)
 		h.answer(t, "foreign", "foreign-poison")
@@ -156,7 +154,7 @@ func testContinuation(t *testing.T, fallback, lost bool) {
 			h.p.primary.close()
 		} else {
 			writeWorkerRequest(t, h.bus, 11, "turn.interrupt", map[string]string{"session_id": testSessionID + "@local"})
-			check(t, readACP(t, h.primaryRead).Method == "session/cancel", "interrupt did not reach current native work")
+			check(t, h.readPrimary(t).Method == "session/cancel", "interrupt did not reach current native work")
 			check(t, readWorkerResponse(t, h.bus, 11).Error == nil, "interrupt failed")
 			h.terminal(t, "native-continuation", "end_turn")
 		}
@@ -164,7 +162,10 @@ func testContinuation(t *testing.T, fallback, lost bool) {
 		h.terminal(t, "p-g/1", "end_turn")
 		replyACP(t, h.primaryWrite, original, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
 	}
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	if !lost {
+		// A lost connection carries no answer to the interject either.
+		replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	}
 	readWorkerReadyID(t, h.bus, "g/1")
 	for _, id := range []int{12, 13} {
 		s := h.status(t, id, "g/1")
@@ -236,14 +237,11 @@ func TestInterjectCancellationPreservesAttemptedNativeAccounting(t *testing.T) {
 				h.running(t, "continued", params.Text)
 				h.answer(t, "continued", "after-cancel")
 				h.terminal(t, "continued", "end_turn")
-				replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+				replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 			} else {
-				barrier := make(chan error, 1)
-				go func() { barrier <- h.p.observer.request(context.Background(), "barrier", nil, nil) }()
-				f := h.readObserver(t)
-				check(t, f.Method == "barrier", "cancelled unsent message reached native")
-				replyACP(t, h.observerWrite, f, map[string]any{})
-				must(t, <-barrier)
+				// The barrier is the next native frame: the cancelled unsent
+				// message never reached native.
+				h.barrier(t)
 			}
 			readWorkerReadyID(t, h.bus, "g/1")
 			s := h.status(t, 9, "g/1")
@@ -298,12 +296,8 @@ func TestWaitingInterjectCannotWakeRetiredRun(t *testing.T) {
 	result := <-returned
 	var notRunning *kit.ProtocolError
 	check(t, errors.As(result.err, &notRunning) && notRunning.Code == -32004 && result.receipt.Disposition == "", "retired run was woken: %+v", result)
-	barrier := make(chan error, 1)
-	go func() { barrier <- h.p.observer.request(context.Background(), "barrier", nil, nil) }()
-	f := h.readObserver(t)
-	check(t, f.Method == "barrier", "retired run got native interject")
-	replyACP(t, h.observerWrite, f, map[string]any{})
-	must(t, <-barrier)
+	// The barrier is the next native frame: the retired run got no interject.
+	h.barrier(t)
 }
 
 func TestOwnedNativeOutputOverflowIsUnavailable(t *testing.T) {
@@ -318,7 +312,7 @@ func TestOwnedNativeOutputOverflowIsUnavailable(t *testing.T) {
 	h.notify(t, "_x.ai/session/interjection", map[string]any{"interjectionId": "message-1"})
 	readWorkerResponse(t, h.bus, 3)
 	h.running(t, "held-fallback", params.Text)
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 	for i := 0; i < 33; i++ {
 		h.answer(t, "held-fallback", strings.Repeat("x", 32768))
 	}
@@ -333,30 +327,30 @@ func TestOwnedNativeOutputOverflowIsUnavailable(t *testing.T) {
 	check(t, failure != nil, "overflow left a live idle integration")
 }
 
-func TestObserverLossSettlesUnclassifiedRunWithoutNativeTerminal(t *testing.T) {
+func TestConnectionLossSettlesUnclassifiedRunWithoutNativeTerminal(t *testing.T) {
 	h := newContinuationHarness(t)
 	h.start(t, 2, "g/1", "owned-first")
 	writeWorkerRequest(t, h.bus, 3, "message.deliver", delivery("unclassified"))
 	h.expectInterject(t, 3, nil)
-	h.p.observer.close()
+	h.p.primary.close()
 	response := readWorkerResponse(t, h.bus, 3)
 	var receipt kit.DeliveryReceipt
 	_ = json.Unmarshal(response.Result, &receipt)
-	check(t, receipt.Disposition != "injected" && receipt.Disposition != "queued_for_next_turn", "lost observer invented admission: %s", response.Result)
+	check(t, receipt.Disposition != "injected" && receipt.Disposition != "queued_for_next_turn", "lost connection invented admission: %s", response.Result)
 	check(t, readWorkerReadyID(t, h.bus, "g/1")["state"] == "unavailable", "unclassified native work became a normal terminal")
-	<-h.p.primary.done
 }
 
-func TestObserverWriteGateCannotSubmitAfterNativeTerminal(t *testing.T) {
+func TestWriteGateCannotSubmitAfterNativeTerminal(t *testing.T) {
 	h := newContinuationHarness(t)
 	original := h.start(t, 2, "g/1", "owned-first")
-	<-h.p.observer.writeGate
+	<-h.p.primary.writeGate
 	returned := make(chan error, 1)
 	run := h.currentRun()
 	go func() { _, e := h.p.Deliver(context.Background(), delivery("never-attempted"), run); returned <- e }()
 	h.p.mu.Lock()
-	for h.p.pendingPrompt.delivery == nil {
-		changed := h.p.pendingPrompt.changed
+	native := h.p.pendingPrompt
+	for native.delivery == nil {
+		changed := native.changed
 		h.p.mu.Unlock()
 		<-changed
 		h.p.mu.Lock()
@@ -364,16 +358,22 @@ func TestObserverWriteGateCannotSubmitAfterNativeTerminal(t *testing.T) {
 	h.p.mu.Unlock()
 	h.terminal(t, "p-g/1", "end_turn")
 	replyACP(t, h.primaryWrite, original, map[string]any{"stopReason": "end_turn", "_meta": map[string]string{"promptId": "p-g/1"}})
-	h.barrier(t)
-	h.p.observer.writeGate <- struct{}{}
+	// The held gate lets no barrier through: wait for the terminal as the
+	// wrapper records it.
+	h.p.mu.Lock()
+	for !native.segments[len(native.segments)-1].terminal {
+		changed := native.changed
+		h.p.mu.Unlock()
+		awaitInterrupt(t, changed, "native terminal recorded")
+		h.p.mu.Lock()
+	}
+	h.p.mu.Unlock()
+	h.p.primary.writeGate <- struct{}{}
 	err := <-returned
 	var notRunning *kit.ProtocolError
 	check(t, errors.As(err, &notRunning) && notRunning.Code == -32004, "terminal crossing = %v", err)
-	barrier := make(chan error, 1)
-	go func() { barrier <- h.p.observer.request(context.Background(), "barrier", nil, nil) }()
-	f := h.readObserver(t)
-	check(t, f.Method == "barrier", "terminal-crossed interject reached native")
-	replyACP(t, h.observerWrite, f, map[string]any{})
-	must(t, <-barrier)
+	// The barrier is the next native frame: the terminal-crossed interject
+	// never reached native.
+	h.barrier(t)
 	check(t, readWorkerReadyID(t, h.bus, "g/1")["state"] == "done", "unsent refusal stranded original run")
 }

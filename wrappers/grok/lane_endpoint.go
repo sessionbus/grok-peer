@@ -27,7 +27,6 @@ type grokEndpoint struct {
 }
 type nativeHelperIdentity struct {
 	SessionID string `json:"session_id"`
-	Leader    string `json:"leader"`
 }
 type laneToolOwner struct {
 	endpoint *grokEndpoint
@@ -70,7 +69,7 @@ func (e *grokEndpoint) serveClient(c net.Conn) {
 		return
 	}
 	var id nativeHelperIdentity
-	if json.Unmarshal(body, &id) != nil || id.SessionID == "" || id.Leader != leaderSocket(e.owner.socket, e.owner.key) {
+	if json.Unmarshal(body, &id) != nil || id.SessionID == "" {
 		return
 	}
 	e.owner.mu.Lock()
@@ -177,11 +176,11 @@ func (o *laneToolOwner) End() {
 // MCP verbatim on one resident socket. Request cancellation and EOF reach the
 // same shared engine and sole Caller in the worker.
 func ForwardLane(ctx context.Context, path string, input io.ReadCloser, output io.Writer) error {
-	native := nativeHelperIdentity{os.Getenv(grokSessionIDEnv), os.Getenv(grokLeaderSocketEnv)}
+	native := nativeHelperIdentity{os.Getenv(grokSessionIDEnv)}
 	return forwardLane(ctx, path, native, input, output)
 }
 func forwardLane(ctx context.Context, path string, native nativeHelperIdentity, input io.ReadCloser, output io.Writer) error {
-	if path == "" || native.SessionID == "" || native.Leader == "" {
+	if path == "" || native.SessionID == "" {
 		return errors.New("Grok lane forwarder requires native helper identity")
 	}
 	c, err := (&net.Dialer{}).DialContext(ctx, "unix", path)

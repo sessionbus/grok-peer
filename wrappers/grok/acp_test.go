@@ -244,8 +244,7 @@ func TestNativeClientRequestsKeepLaneWithoutApproval(t *testing.T) {
 		params["sessionId"] = testSessionID
 		h.primaryWrite.SetEscapeHTML(false)
 		must(t, h.primaryWrite.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
-		var reply json.RawMessage
-		must(t, h.primaryRead.Decode(&reply))
+		reply := h.nextPrimary(t).raw
 		check(t, string(reply) == expected, "reply to %s: %s", method, reply)
 		h.p.primary.mu.Lock()
 		err := h.p.primary.err

@@ -83,9 +83,10 @@ entry is disabled in the user's Grok config (`enabled = false`, or its name in
 `disabled_mcp_servers`); `grok mcp enable sessionbus`, Grok's command for it
 in its 1.0.35 source, enables it again.
 
-A lane retains the exact `--allow` projection on its private leader for
-compatibility, although public Grok 1.0.13 through 1.0.38 do not forward those
-top-level rules into leader sessions. Interactive caller allow, deny,
+A lane passes no `--allow` of its own: Grok's `agent` subcommand does not take
+permission rules from the command line, and every session reads the global
+rules when it starts (both per the 1.0.35 source), so the config rule above is
+the lane's Sessionbus grant. Interactive caller allow, deny,
 permission-mode and bypass controls reach the TUI with their bytes and order.
 Grok does not apply `--allow` and `--deny` given on the command line in leader
 mode (Grok's own behaviour per its 1.0.35 source; observed for one rule on Grok
@@ -150,12 +151,16 @@ A lane runs `grok` from the Sessionbus daemon service's `PATH` and, when that
 `PATH` has none, `bin/grok` in Grok's home (`$GROK_HOME`, default `~/.grok`); a
 Grok installed elsewhere with `GROK_BIN_DIR` must be on the service `PATH`.
 
-A fresh lane's typed `model` is passed to the native `agent` subcommand, which
-the private leader applies to the new session. Typed `reasoning_effort` and the
-accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain top-level
-native options that native agent mode does not apply, and a resumed lane does not
-receive the typed model. The native grammar record is
-`docs/designs/grok-0.5.0/LANE-MODEL-PLACEMENT.md` in the source repository.
+A fresh lane's typed `model` is passed to the native `agent` subcommand and
+named as `modelId` in the lane's session request, the field a Grok leader
+writes for its client's model (per Grok 1.0.35 source). Typed
+`reasoning_effort` and the
+accepted raw `--agent`, `--no-plan` and `--no-subagents` options remain
+top-level native options that native agent mode does not apply. A resumed lane's
+session request names no model; its session restores the model stored with it (per
+Grok 1.0.35 source). The native grammar record, written when a lane still had
+a private leader, is `docs/designs/grok-0.5.0/LANE-MODEL-PLACEMENT.md` in the
+source repository.
 
 An idle lane delivery returns NotRunning before native submission, so the daemon
 starts one owned prompt. Active native actor acknowledgment means `injected`
@@ -191,33 +196,15 @@ native identity and title. Native session end, supersession and owner shutdown
 remain terminal. Daemon-managed Worker lanes do not reconnect after losing
 their launch connection.
 
-## Private leader loss (known native limitation)
+## Lane process
 
-Only a lane has a private leader. An interactive launch starts no leader and no
-startup hold of its own; it forwards signals to the TUI and exits with the
-TUI's own status.
+A lane is one native process, `grok [options] agent [-m model] --no-leader
+stdio`, on one connection from the wrapper. The wrapper passes `--no-leader` so
+that a lane does not join the user's own leader when Grok's config turns leader
+mode on (per Grok 1.0.35 source). Closing the lane ends that process. An
+interactive launch starts no leader and no startup hold of its own either; it
+forwards signals to the TUI and exits with the TUI's own status.
 
-A lane's private leader can exit while the lane's `agent --leader stdio`
-bridge is attached: after a native update (the wrapper does not suppress
-updates), when a newer native client takes it over (per Grok 1.0.35 source), or
-when it is killed. The wrapper does not end the session for that. The bridge is
-left to its bounded native reconnect. Whether the session and its delivery
-continue correctly after a reconnect depends on the native release.
-
-Grok's reconnect path can start a detached `grok agent leader
---no-exit-on-disconnect --relay-on-demand` on the same private socket. This was
-observed on Grok 1.0.44 in an interactive launch with the former private
-leader, after TERM to that leader: the replacement ran in its own process group
-under PID 1 and survived the launcher's teardown. For a lane's bridge the same
-path is known from the Grok source only and has not been observed. The
-wrapper's teardown covers only the processes the wrapper started. Native Grok
-has no connect-only client option and gives clients no request to stop a
-leader. The wrapper does not search for or stop a replacement. Stop a leftover
-one by its exact PID after confirming its command line.
-
-The replacement starts without the wrapper's leader arguments. Per Grok 1.0.35
-source (not observed in use), its session-default permission mode therefore
-comes from `config.toml` instead of the lane's `permission_mode`. Resumed
-lanes re-send their mode when they reconnect. A fresh lane replayed
-by the stdio bridge takes the config default instead. Permission rules,
-including the Sessionbus grant, come from the same config files in either case.
+A lane start may trigger native's own background update: a running lane is not
+restarted by it, and a lane started after the update has finished runs the new
+version (per Grok 1.0.35 source; the wrapper does not suppress updates).

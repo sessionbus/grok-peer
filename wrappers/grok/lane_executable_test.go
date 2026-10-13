@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 
@@ -69,7 +68,7 @@ func TestLaneRunsGrokFromItsOwnHomeWhenPathHasNone(t *testing.T) {
 	}
 }
 
-func TestLaneStartsEveryRoleFromGroksOwnHome(t *testing.T) {
+func TestLaneStartsFromGroksOwnHome(t *testing.T) {
 	root, home := testsocket.Directory(t), t.TempDir()
 	installed := stubGrok(t, filepath.Join(home, "bin"))
 	t.Setenv("GROK_HOME", home)
@@ -93,8 +92,7 @@ func TestLaneStartsEveryRoleFromGroksOwnHome(t *testing.T) {
 	must(t, p.Close(context.Background(), sessionkit.SessionCloseRequest{}))
 	mu.Lock()
 	defer mu.Unlock()
-	// Private leader, startup hold, primary and observer.
-	check(t, len(selected) == 4 && !slices.ContainsFunc(selected, func(name string) bool { return name != installed }), "lane starts ran %q, want four of %s", selected, installed)
+	check(t, len(selected) == 1 && selected[0] == installed, "lane starts ran %q, want one of %s", selected, installed)
 }
 
 func TestLaneKeepsRefusalOfRelativePathHit(t *testing.T) {

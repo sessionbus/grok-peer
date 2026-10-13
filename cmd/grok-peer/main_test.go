@@ -244,16 +244,14 @@ func TestLaneSocketSelectsTheForwarderOverALiveManagedLaunch(t *testing.T) {
 	// A managed backend would claim this launch's requested name as soon as it is built.
 	launch := filepath.Join(t.TempDir(), "grok-launch-1")
 	launchDirectoryWith(t, launch, filepath.Join(root, "bus"), "[]", "requested", root)
+	// The helper's identity is its native session alone, also with a leader
+	// socket in its environment.
 	t.Setenv("GROK_LEADER_SOCKET", leader)
 	_, _, done := managedEntry(t, launch, "", lane)
 	select {
 	case line := <-identity:
-		var native struct {
-			SessionID string `json:"session_id"`
-			Leader    string `json:"leader"`
-		}
-		if err := json.Unmarshal([]byte(line), &native); err != nil || native.SessionID != "native" || native.Leader != leader {
-			t.Fatalf("lane endpoint received %q (%v)", line, err)
+		if line != "{\"session_id\":\"native\"}\n" {
+			t.Fatalf("lane endpoint received %q", line)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("helper did not reach its lane endpoint")

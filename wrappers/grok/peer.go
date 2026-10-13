@@ -36,7 +36,6 @@ var errRosterActorGone = errors.New("Grok roster actor is not live")
 const ManagedEnv = "SESSIONBUS_GROK_MANAGED"
 
 const grokSessionIDEnv = "GROK_SESSION_ID"
-const grokLeaderSocketEnv = "GROK_LEADER_SOCKET"
 
 // launchFactsFile is the one file a managed launch writes into its launch directory
 // before native starts. The helper's registration carries only that directory, so the

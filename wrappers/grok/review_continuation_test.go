@@ -19,7 +19,7 @@ func TestReviewOverflowCannotReleaseLiveContinuation(t *testing.T) {
 	h.notify(t, "_x.ai/session/interjection", map[string]any{"interjectionId": "message-1"})
 	readWorkerResponse(t, h.bus, 3)
 	h.running(t, "held-fallback", params.Text)
-	replyACP(t, h.observerWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
+	replyACP(t, h.primaryWrite, interject, map[string]any{"result": map[string]string{"status": "queued"}})
 	// Native fallback stays live: deliberately send no terminal for it.
 	for range 33 {
 		h.answer(t, "held-fallback", strings.Repeat("x", 32768))

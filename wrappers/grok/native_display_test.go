@@ -34,7 +34,7 @@ func TestInitialPromptAdmissionUsesNativeTrimmedDisplay(t *testing.T) {
 	raw := "\u00a0\u2003Reply  with internal spacing\nthen finish\u2003\u00a0"
 	writeWorkerRequest(t, h.bus, 2, "turn.execute", map[string]any{"session_id": testSessionID + "@local", "run_id": "g/1", "input": raw})
 	check(t, readWorkerResponse(t, h.bus, 2).Error == nil, "execute refused")
-	prompt := readACP(t, h.primaryRead)
+	prompt := h.readPrimary(t)
 	var params struct {
 		Prompt []struct{ Text string }
 	}
@@ -56,7 +56,7 @@ func TestInitialPromptAdmissionKeepsInternalWhitespaceStrict(t *testing.T) {
 	raw := " edge  spacing\n"
 	writeWorkerRequest(t, h.bus, 2, "turn.execute", map[string]any{"session_id": testSessionID + "@local", "run_id": "g/1", "input": raw})
 	check(t, readWorkerResponse(t, h.bus, 2).Error == nil, "execute refused")
-	prompt := readACP(t, h.primaryRead)
+	prompt := h.readPrimary(t)
 
 	// Native trims only the edges; collapsing the two internal spaces must not
 	// bind an otherwise valid prompt ID or terminal to this run.

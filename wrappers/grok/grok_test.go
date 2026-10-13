@@ -72,18 +72,6 @@ func fakeGrok() {
 	if path := os.Getenv("GROK_TEST_INTERACTIVE_STARTED"); path != "" && slices.Contains(arguments, "--leader") && !slices.Contains(arguments, "stdio") {
 		publishTestFile(path, []byte("started"))
 	}
-	if slices.Contains(arguments, "leader") && !slices.Contains(arguments, "stdio") {
-		if pidPath := os.Getenv("GROK_TEST_LEADER_PID"); pidPath != "" {
-			publishTestFile(pidPath, []byte(strconv.Itoa(os.Getpid())))
-		}
-		path := option(arguments, "--leader-socket")
-		listener, err := net.Listen("unix", path)
-		if err != nil {
-			os.Exit(2)
-		}
-		defer listener.Close()
-		time.Sleep(24 * time.Hour)
-	}
 	if slices.Contains(arguments, "--leader") && !slices.Contains(arguments, "stdio") {
 		if path := os.Getenv("GROK_TEST_INTERACTIVE_PID"); path != "" {
 			publishTestFile(path, []byte(strconv.Itoa(os.Getpid())))
@@ -124,10 +112,6 @@ func fakeGrok() {
 			reply(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"protocolVersion": 1, "authMethods": []map[string]string{{"id": "cached_token"}}}})
 		case "authenticate":
 			reply(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
-			if path := os.Getenv("GROK_TEST_HOLD_EXIT"); path != "" && slices.Contains(arguments, "stdio") {
-				<-fileReady(path)
-				return
-			}
 		case "session/new", "session/load":
 			session := testSessionID
 			if loaded, ok := params["sessionId"].(string); ok {
@@ -150,7 +134,7 @@ func fakeGrok() {
 					}
 					defer c.Close()
 					enc, dec := json.NewEncoder(c), json.NewDecoder(c)
-					_ = enc.Encode(nativeHelperIdentity{session, option(arguments, "--leader-socket")})
+					_ = enc.Encode(nativeHelperIdentity{session})
 					var ack map[string]any
 					if dec.Decode(&ack) != nil {
 						os.Exit(5)
@@ -321,20 +305,19 @@ func TestFreshLaneNativeLifecycle(t *testing.T) {
 	must(t, err)
 	defer p.Close(context.Background(), sessionkit.SessionCloseRequest{})
 	check(t, opened.SessionID == testSessionID, "session id = %q", opened.SessionID)
-	check(t, p.primary.role == acpPrimary && p.observer.role == acpObserver, "only the lane primary may answer native client requests")
+	check(t, p.primary.role == acpPrimary, "the lane's one connection must answer native client requests")
 	check(t, !exists(filepath.Join(root, "locks")), "adapter session lock recreated")
 	frames := records(t, recordPath)
 	check(t, containsStart(frames, "--permission-mode", "bypassPermissions", "--reasoning-effort", "low", "-m", "grok-4.6", "--disable-web-search"), "typed argv not preserved")
-	check(t, containsStart(frames, "--allow", "MCPTool(sessionbus__sessionbus)", "--relay-on-demand"), "lane leader omitted exact Sessionbus grant")
-	check(t, countStartsContaining(frames, "--allow", "MCPTool(sessionbus__sessionbus)") == 1, "Sessionbus grant escaped the one private leader")
-	check(t, containsStart(frames, "--relay-on-demand") && !containsStart(frames, "--no-exit-on-disconnect"), "leader argv did not preserve relay-on-demand")
+	check(t, countStartsContaining(frames) == 1 && containsStart(frames, "agent", "--no-leader", "stdio"), "lane is not one native process without a leader: %s", frames)
+	check(t, !containsStart(frames, "--leader") && !containsStart(frames, "--allow"), "lane start carries leader or grant arguments")
 	check(t, countStartsContaining(frames, "--no-auto-update") == 0, "a native start suppressed native auto-update")
-	check(t, countFrames(frames, "initialize") == 3, "authenticated startup hold absent: %d handshakes", countFrames(frames, "initialize"))
+	check(t, countFrames(frames, "initialize") == 1 && countFrames(frames, "_x.ai/session/rename") == 1, "lane did not open and name its session on one connection: %s", frames)
 	open := findFrame(frames, "session/new")
 	alias, err := sessionbusAlias()
 	must(t, err)
 	check(t, strings.Contains(string(open), `"command":"`+alias+`"`), "native MCP command is not the preflighted alias: %s", open)
-	check(t, !strings.Contains(string(open), "--session-id") && strings.Contains(string(open), `"sessionbus"`) && strings.Contains(string(open), `"SESSIONBUS_LANE_SOCKET"`) && strings.Contains(string(open), `"yoloMode":true`), "fresh open = %s", open)
+	check(t, !strings.Contains(string(open), "--session-id") && strings.Contains(string(open), `"sessionbus"`) && strings.Contains(string(open), `"SESSIONBUS_LANE_SOCKET"`) && strings.Contains(string(open), `"yoloMode":true`) && strings.Contains(string(open), `"modelId":"grok-4.6"`), "fresh open = %s", open)
 	idle, err := p.Deliver(context.Background(), delivery("idle"), nil)
 	var notRunning *sessionkit.ProtocolError
 	check(t, errors.As(err, &notRunning) && notRunning.Code == -32004 && idle.Disposition == "", "idle = %#v, %v", idle, err)
@@ -367,7 +350,7 @@ func TestInterruptAndResume(t *testing.T) {
 	load := findFrame(frames, "session/load")
 	check(t, strings.Contains(string(load), `"sessionId":"`+testSessionID+`"`), "resume load = %s", load)
 	check(t, !containsStart(frames, "--resume", testSessionID), "resume was selected in both argv and session/load")
-	check(t, containsStart(frames, "--allow", "MCPTool(sessionbus__sessionbus)", "--relay-on-demand"), "resumed lane leader omitted exact Sessionbus grant")
+	check(t, countStartsContaining(frames) == 2 && countStartsContaining(frames, "agent", "--no-leader", "stdio") == 2, "fresh and resumed lane are not one native process each: %s", frames)
 	must(t, p.Close(context.Background(), sessionkit.SessionCloseRequest{}))
 }
 
@@ -407,26 +390,18 @@ func TestResumeIdentityFailureRepliesBeforeCleanup(t *testing.T) {
 	_ = connection.Close()
 	<-worker.Closed()
 	p.mu.Lock()
-	child, leader := p.child, p.leader
+	child := p.child
 	p.mu.Unlock()
 	select {
 	case <-child.Done():
 	default:
 		t.Fatal("failed Open child not reaped")
 	}
-	select {
-	case <-leader.done:
-	default:
-		t.Fatal("failed Open leader not reaped")
-	}
 	_ = listener.Close()
 }
 
-func TestOmittedCwdAndSocketReadiness(t *testing.T) {
+func TestOmittedCwd(t *testing.T) {
 	root, recordPath := testsocket.Directory(t), filepath.Join(t.TempDir(), "record")
-	regular := filepath.Join(root, "not-a-socket")
-	must(t, os.WriteFile(regular, nil, 0o600))
-	check(t, !grokSocketReady(regular), "regular file reported ready")
 	t.Setenv("GROK_TEST_RECORD", recordPath)
 	p := New(filepath.Join(root, "sessionbus.sock"), "cwd-token")
 	p.SetCall(func(context.Context, string, any) (json.RawMessage, error) { return json.RawMessage(`{}`), nil })
@@ -566,17 +541,15 @@ func TestCancelledCloseJoinsNativeProcesses(t *testing.T) {
 	_, err := p.Open(context.Background(), sessionkit.OpenRequest{Name: "lane@local", Open: sessionkit.OpenOptions{Cwd: root}})
 	must(t, err)
 	p.mu.Lock()
-	watcher, leader := p.watcher, p.leader
+	child := p.child
 	p.mu.Unlock()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_ = p.Close(ctx, sessionkit.SessionCloseRequest{})
-	for _, process := range []*nativeProcess{watcher, leader} {
-		select {
-		case <-process.done:
-		default:
-			t.Fatal("Close returned before a native process was reaped")
-		}
+	select {
+	case <-child.Done():
+	default:
+		t.Fatal("Close returned before the native process was reaped")
 	}
 }
 
@@ -709,7 +682,7 @@ func readWorkerResponse(t *testing.T, reader *workerReader, id int) workerRespon
 }
 
 // Continuation fixtures may own an asynchronous frame reader so an early bus
-// response can be observed while waiting for the native observer. All other
+// response can be observed while waiting for a native frame. All other
 // fixtures keep their original synchronous reader.
 func (reader *workerReader) readResponse(t *testing.T) workerResponse {
 	t.Helper()
@@ -858,15 +831,6 @@ func countStartsContaining(records []json.RawMessage, values ...string) int {
 		count++
 	}
 	return count
-}
-
-func option(arguments []string, name string) string {
-	for index, argument := range arguments {
-		if argument == name && index+1 < len(arguments) {
-			return arguments[index+1]
-		}
-	}
-	return ""
 }
 
 func exists(path string) bool { _, err := os.Stat(path); return err == nil }

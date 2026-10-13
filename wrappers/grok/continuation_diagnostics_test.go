@@ -14,6 +14,7 @@ import (
 
 type continuationACPRead struct {
 	frame acpFrame
+	raw   json.RawMessage
 	err   error
 }
 
@@ -25,12 +26,14 @@ type continuationDeliveryResult struct {
 // Each stream has exactly one decoder owner. The one-element channels allow
 // the test to select native submission against an early delivery result without
 // abandoning a read or racing a later status/receipt reader. Cleanup must close
-// the actual streams after stop and before join.
-func continuationReaders(bus *workerReader, observer *json.Decoder) (<-chan continuationACPRead, func(), func()) {
+// the actual streams after stop and before join. Native is decoded only when
+// the test asks for a frame: until then an unread frame keeps the wrapper's
+// write blocked, as the unread pipe itself would.
+func continuationReaders(bus *workerReader, native *json.Decoder) (<-chan continuationACPRead, chan<- struct{}, func(), func()) {
 	stop := make(chan struct{})
-	busDone, observerDone := make(chan struct{}), make(chan struct{})
+	busDone, nativeDone := make(chan struct{}), make(chan struct{})
 	busFrames := make(chan workerRead, 1)
-	observerFrames := make(chan continuationACPRead, 1)
+	nativeFrames, nativeWant := make(chan continuationACPRead, 1), make(chan struct{}, 1)
 	bus.frames = busFrames
 	go func() {
 		defer close(busDone)
@@ -53,13 +56,20 @@ func continuationReaders(bus *workerReader, observer *json.Decoder) (<-chan cont
 		}
 	}()
 	go func() {
-		defer close(observerDone)
-		defer close(observerFrames)
+		defer close(nativeDone)
+		defer close(nativeFrames)
 		for {
-			var next continuationACPRead
-			next.err = observer.Decode(&next.frame)
 			select {
-			case observerFrames <- next:
+			case <-nativeWant:
+			case <-stop:
+				return
+			}
+			var next continuationACPRead
+			if next.err = native.Decode(&next.raw); next.err == nil {
+				next.err = json.Unmarshal(next.raw, &next.frame)
+			}
+			select {
+			case nativeFrames <- next:
 			case <-stop:
 				return
 			}
@@ -68,17 +78,33 @@ func continuationReaders(bus *workerReader, observer *json.Decoder) (<-chan cont
 			}
 		}
 	}()
-	return observerFrames, func() { close(stop) }, func() { <-busDone; <-observerDone }
+	return nativeFrames, nativeWant, func() { close(stop) }, func() { <-busDone; <-nativeDone }
 }
 
-func (h *continuationHarness) readObserver(t *testing.T) acpFrame {
+// primaryFrame asks the stream's reader for the next native frame, unless an
+// earlier ask is still open, and returns where that frame arrives.
+func (h *continuationHarness) primaryFrame() <-chan continuationACPRead {
+	if !h.primaryAsked {
+		h.primaryAsked = true
+		h.primaryWant <- struct{}{}
+	}
+	return h.primaryRead
+}
+
+func (h *continuationHarness) nextPrimary(t *testing.T) continuationACPRead {
 	t.Helper()
-	next, ok := <-h.observerRead
+	next, ok := <-h.primaryFrame()
+	h.primaryAsked = false
 	if !ok {
-		t.Fatal("native observer frame reader closed")
+		t.Fatal("native frame reader closed")
 	}
 	must(t, next.err)
-	return next.frame
+	return next
+}
+
+func (h *continuationHarness) readPrimary(t *testing.T) acpFrame {
+	t.Helper()
+	return h.nextPrimary(t).frame
 }
 
 func (h *continuationHarness) expectInterject(t *testing.T, deliveryID int, direct <-chan continuationDeliveryResult) acpFrame {
@@ -98,9 +124,10 @@ func (h *continuationHarness) interjectOrDelivery(t *testing.T, deliveryID int, 
 	}
 	for {
 		select {
-		case next, ok := <-h.observerRead:
+		case next, ok := <-h.primaryFrame():
+			h.primaryAsked = false
 			if !ok {
-				return acpFrame{}, fmt.Errorf("native observer closed before interject: %w", io.EOF)
+				return acpFrame{}, fmt.Errorf("native closed before interject: %w", io.EOF)
 			}
 			return next.frame, next.err
 		case next, ok := <-h.bus.frames:
@@ -132,7 +159,7 @@ func earlyWorkerDelivery(response workerResponse) error {
 func TestContinuationDiagnosticsSurfaceEarlyWorkerDelivery(t *testing.T) {
 	h := newContinuationHarness(t)
 	// The actual Worker has no Run. Its NotRunning response must diagnose
-	// a test expecting interject instead of stranding the observer read.
+	// a test expecting interject instead of stranding the native read.
 	writeWorkerRequest(t, h.bus, 2, "turn.status", map[string]string{"session_id": testSessionID + "@local"})
 	writeWorkerRequest(t, h.bus, 3, "message.deliver", delivery("idle"))
 	_, err := h.interjectOrDelivery(t, 3, nil)
@@ -157,15 +184,15 @@ func TestContinuationDiagnosticsSurfaceEarlyDirectDelivery(t *testing.T) {
 func TestContinuationDiagnosticsObserveNativeFrame(t *testing.T) {
 	h := newContinuationHarness(t)
 	done := make(chan error, 1)
-	go func() { done <- h.p.observer.request(context.Background(), "_x.ai/interject", nil, nil) }()
+	go func() { done <- h.p.primary.request(context.Background(), "_x.ai/interject", nil, nil) }()
 	f := h.expectInterject(t, 0, nil)
-	replyACP(t, h.observerWrite, f, map[string]any{})
+	replyACP(t, h.primaryWrite, f, map[string]any{})
 	must(t, <-done)
 }
 
 func TestContinuationDiagnosticsObserveNativeEOF(t *testing.T) {
 	h := newContinuationHarness(t)
-	h.p.observer.close()
+	h.p.primary.close()
 	_, err := h.interjectOrDelivery(t, 0, nil)
 	check(t, err != nil, "native EOF accepted as interject")
 }
