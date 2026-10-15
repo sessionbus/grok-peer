@@ -49,6 +49,30 @@ Evidence: `/home/antst/sessionbus-evidence/grok-message-wake-installed-dev1-2026
 
 Installed evidence scope and remaining limits are mapped in [acceptance](../designs/grok-0.5.0/ACCEPTANCE.md). The retained earlier isolated-home/daemon experiments are historical evidence, not the current installation or acceptance recipe. Current changes do not require repeating already sealed native discoveries.
 
+## Busy interactive session and Ctrl+C (2026-10-15)
+
+Observed in an interactive session with grok-peer 21306eab and native Grok
+1.0.52, one case each. A prompt typed while a task was running was shown as
+queued; after Ctrl+C cancelled the task, Grok started the queued prompt by
+itself as its next turn and answered it (2026-10-15). A peer message delivered
+while the session is busy does not join that queue: grok-peer hands it to the
+running task as a native interjection, and the sender's receipt is `injected`.
+After Ctrl+C cancelled that task, no later turn started, no reply came in the
+ten seconds observed, and the receipt stayed `injected` (2026-10-14). What
+became of the message inside Grok, and whether the model saw any of it before
+the cancel, was not observed. Grok's cancel clears the interjections held for
+the running task by design (Grok 1.0.35 source, `run_loop.rs:1150-1151`). Both
+cases are observations of native's records and screen, not of the cancelled
+task's own command; in the typed-prompt case native recorded that command as
+not executed. The owner accepts this as Grok's behaviour for now (2026-10-15).
+Evidence: typed prompt `/home/antst/sessionbus-evidence/grok-row-n-extra-dev2-20261015/N-FROZEN`,
+`SHA256SUMS` SHA-256
+`973684ac7322ad09837c1567ef7f864c5d3c3198d1f68583970892ca4b1bdbbf`, independent
+read `/home/antst/sessionbus-evidence/grok-row-n-extra-read-dev1-20261015`;
+peer message `/home/antst/sessionbus-evidence/grok-foreign-response-production-21306-dev2-20261013/ORDINARY-INTERACTIVE-21306/N-P-FROZEN`,
+`SHA256SUMS` SHA-256
+`c00a0d903efc2849c9238baa27ab7c7710b6f7c84dd654752f2c7a6d8fbfd995`.
+
 ## Current managed grant source boundary (2026-09-19)
 
 The installed UMKA version observed for this change was Grok 1.0.34 revision
