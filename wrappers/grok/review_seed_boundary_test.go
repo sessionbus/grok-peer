@@ -20,7 +20,7 @@ func reviewPrompt(t *testing.T) (*Wrapper, *nativePrompt, *json.Decoder, *json.E
 	decoder, encoder := json.NewDecoder(rr), json.NewEncoder(sw)
 	started := make(chan *nativePrompt, 1)
 	go func() {
-		prompt, e := p.startPrompt(context.Background(), p.primary, "native", "owned text")
+		prompt, e := p.startPrompt(context.Background(), p.primary, "native", "owned text", "")
 		if e != nil {
 			started <- nil
 			return

@@ -338,7 +338,14 @@ func (p *Wrapper) executeRun(ctx context.Context, run *sessionkit.Run, seed sess
 		}
 		return sessionkit.TurnResult{Outcome: "interrupted"}, nil
 	}
-	turn, err := p.startPrompt(ctx, primary, id, input)
+	// A peer message is marked as a parent message: by Grok's source native
+	// then attaches no file named in its text and leaves its slash commands
+	// inert. The owner's Run input stays an ordinary prompt.
+	var promptID string
+	if seed.Delivery != nil {
+		promptID = "parent-message-" + seed.Delivery.MessageID
+	}
+	turn, err := p.startPrompt(ctx, primary, id, input, promptID)
 	var result sessionkit.TurnResult
 	if seed.Delivery != nil {
 		if err == nil {
@@ -390,6 +397,7 @@ type nativePrompt struct {
 	client      *acpClient
 	sessionID   string
 	promptText  string
+	promptID    string
 	nativeID    string
 	attempted   bool
 	admitted    chan struct{}
@@ -403,8 +411,8 @@ type nativePrompt struct {
 	}
 }
 
-func (p *Wrapper) startPrompt(ctx context.Context, primary *acpClient, id, prompt string) (*nativePrompt, error) {
-	t := &nativePrompt{ctx: ctx, changed: make(chan struct{}), owner: p, client: primary, sessionID: id, promptText: prompt, admitted: make(chan struct{}), done: make(chan struct{})}
+func (p *Wrapper) startPrompt(ctx context.Context, primary *acpClient, id, prompt, promptID string) (*nativePrompt, error) {
+	t := &nativePrompt{ctx: ctx, changed: make(chan struct{}), owner: p, client: primary, sessionID: id, promptText: prompt, promptID: promptID, admitted: make(chan struct{}), done: make(chan struct{})}
 	p.mu.Lock()
 	// Publish the sole native request owner before any native-visible write.
 	// Admission, delivery and interruption all consult this same owner.
@@ -412,7 +420,11 @@ func (p *Wrapper) startPrompt(ctx context.Context, primary *acpClient, id, promp
 	p.mu.Unlock()
 	started := make(chan error, 1)
 	go func() {
-		t.err = primary.requestSubmitting(ctx, "session/prompt", map[string]any{"sessionId": id, "prompt": []map[string]string{{"type": "text", "text": prompt}}}, &t.result, started, func() error {
+		params := map[string]any{"sessionId": id, "prompt": []map[string]string{{"type": "text", "text": prompt}}}
+		if promptID != "" {
+			params["_meta"] = map[string]string{"promptId": promptID}
+		}
+		t.err = primary.requestSubmitting(ctx, "session/prompt", params, &t.result, started, func() error {
 			p.mu.Lock()
 			t.attempted = true
 			p.mu.Unlock()
@@ -787,7 +799,13 @@ func (p *Wrapper) receiveQueue(frame acpFrame) {
 		Text      string `json:"runningText"`
 		Kind      string `json:"runningKind"`
 	}
-	if json.Unmarshal(frame.Params, &q) != nil || q.PromptID == "" || q.Kind != "prompt" {
+	if json.Unmarshal(frame.Params, &q) != nil || q.PromptID == "" {
+		return
+	}
+	// Grok reports a prompt marked as a parent message under its own kind.
+	// That kind admits only our marked prompt, by the exact id we sent.
+	marked := q.Kind == "parent_agent_message"
+	if q.Kind != "prompt" && !marked {
 		return
 	}
 	p.mu.Lock()
@@ -802,7 +820,7 @@ func (p *Wrapper) receiveQueue(frame acpFrame) {
 	if t == nil || !t.attempted || q.SessionID != t.sessionID {
 		return
 	}
-	if t.nativeID == "" && nativeRunningTextMatches(t.promptText, q.Text) {
+	if t.nativeID == "" && (!marked || t.promptID != "" && q.PromptID == t.promptID) && nativeRunningTextMatches(t.promptText, q.Text) {
 		t.nativeID = q.PromptID
 		t.segments = append(t.segments, &nativeSegment{id: q.PromptID})
 		close(t.admitted)
@@ -810,7 +828,7 @@ func (p *Wrapper) receiveQueue(frame acpFrame) {
 		return
 	}
 	d := t.delivery
-	if d != nil && d.attempted && d.acked && !d.classified && nativeRunningTextMatches(d.text, q.Text) && !t.hasSegment(q.PromptID) {
+	if !marked && d != nil && d.attempted && d.acked && !d.classified && nativeRunningTextMatches(d.text, q.Text) && !t.hasSegment(q.PromptID) {
 		if len(t.segments) >= maxACPPending {
 			t.failure = errors.New("Grok continuation capacity exceeded")
 			overflow = t.failure
