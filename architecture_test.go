@@ -23,7 +23,7 @@ import (
 const (
 	peersModule             = "github.com/sessionbus/grok-peer"
 	sdkModule               = "github.com/antst/sessionbus/bus/sdk/go"
-	sdkVersion              = "v0.5.12"
+	sdkVersion              = "v0.5.14"
 	citationCount           = 20
 	citationReachabilitySHA = "9acd760a81edb9647e9154f34c3bc236cf4b68b2756d7fbf8885e3feb778b170"
 	factsHeader             = "> Historical source note: citations to pre-split Sessionbus paths resolve in\n> the Forgejo `ai/sessionbus` repository through its `legacy-*` branches.\n> Citations to product source resolve in the external repository and full\n> commit recorded by the split archive manifest. Host evidence paths are\n> immutable external artifacts, not repository paths."
@@ -68,10 +68,10 @@ func TestRepositoryBoundary(t *testing.T) {
 
 func TestModuleAndImportBoundary(t *testing.T) {
 	module := read(t, "go.mod")
-	if !bytes.Contains(module, []byte("module "+peersModule+"\n")) || !bytes.Contains(module, []byte(sdkModule+" "+sdkVersion)) {
+	if !bytes.Contains(module, []byte("module "+peersModule+"\n")) || !bytes.Contains(module, []byte(sdkModule+" "+sdkVersion+"\n")) {
 		t.Fatalf("go.mod violates the peers module shape:\n%s", module)
 	}
-	if !bytes.Contains(module, []byte("github.com/sessionbus/peer-common v0.0.0-20260929104500-c5551a29654c")) {
+	if !bytes.Contains(module, []byte("github.com/sessionbus/peer-common v0.0.0-20261112015618-29ddcb4585de\n")) {
 		t.Fatal("shared support must use the reviewed immutable module version")
 	}
 	if bytes.Contains(module, []byte("replace ")) {

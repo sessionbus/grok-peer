@@ -23,7 +23,8 @@ the session again.
 
 Use `sessionbus__sessionbus` with `{action, arguments}`. The advertised actions
 are list, send, spawn, describe, trace, run, start, wait, status, ack, interrupt,
-close and forget. Follow the actual tool schemas; do not invent convenience methods.
+close, forget, transfer.offer, transfer.request, transfer.accept, transfer.cancel
+and transfer.status. Follow the actual tool schemas; do not invent convenience methods.
 Call `list` before resolving an ambiguous peer name and use its returned ID.
 The native session ID and title are authoritative; a peer may have an empty
 name. Native rename events update presence without a model prompt. Do not use

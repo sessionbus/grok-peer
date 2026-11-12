@@ -14,6 +14,7 @@ import (
 	kit "github.com/antst/sessionbus/bus/sdk/go"
 	"github.com/antst/sessionbus/bus/sdk/go/protocol"
 	"github.com/sessionbus/peer-common/host"
+	"github.com/sessionbus/peer-common/mcp"
 )
 
 type PeerBackend struct {
@@ -325,7 +326,20 @@ func (b *PeerBackend) Call(ctx context.Context, method string, params any) (json
 func (b *PeerBackend) Caller() *kit.Caller                                  { return b.caller }
 func (b *PeerBackend) Prepare(ctx context.Context, _ json.RawMessage) error { return b.waitReady(ctx) }
 func (b *PeerBackend) Action(ctx context.Context, action string, args json.RawMessage) (json.RawMessage, error) {
-	return b.caller.Action(ctx, action, args)
+	if err := b.waitReady(ctx); err != nil {
+		return nil, err
+	}
+	b.mu.Lock()
+	peer, cwd, ending := b.peer, b.cwd, b.ending
+	b.mu.Unlock()
+	if peer == nil || ending {
+		return nil, errors.New("Grok peer is unavailable")
+	}
+	bound, err := mcp.BindTransferPaths(action, args, cwd)
+	if err != nil {
+		return nil, err
+	}
+	return peer.Caller.Action(ctx, action, bound)
 }
 func (b *PeerBackend) End() { b.Shutdown() }
 func (b *PeerBackend) Shutdown() {
