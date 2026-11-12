@@ -41,6 +41,7 @@ type Wrapper struct {
 	primary       *acpClient
 	child         *nativeProcess
 	sessionID     string
+	cwd           string
 	run           *sessionkit.Run
 	pendingPrompt *nativePrompt
 	answers       map[string]*strings.Builder
@@ -146,6 +147,7 @@ func (p *Wrapper) Open(ctx context.Context, request sessionkit.OpenRequest) (res
 	primary := newACPClient(acpPrimary, input, output, p.receive)
 	p.mu.Lock()
 	p.primary, p.child = primary, child
+	p.cwd = cwd
 	p.mu.Unlock()
 	if err = initializeACP(ctx, primary); err == nil {
 		err = p.openSession(ctx, primary, request, alias, endpoint.Path)

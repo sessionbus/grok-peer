@@ -129,12 +129,16 @@ func (e *grokEndpoint) Close() error {
 func (o *laneToolOwner) Action(ctx context.Context, action string, args json.RawMessage) (json.RawMessage, error) {
 	p := o.endpoint.owner
 	p.mu.Lock()
-	id, closing := p.sessionID, p.closing
+	id, closing, cwd := p.sessionID, p.closing, p.cwd
 	p.mu.Unlock()
 	if id == "" || closing || id != o.native.SessionID {
 		return nil, errors.New("Grok native helper does not belong to an open lane")
 	}
-	return p.caller.Action(ctx, action, args)
+	bound, err := mcp.BindTransferPaths(action, args, cwd)
+	if err != nil {
+		return nil, err
+	}
+	return p.caller.Action(ctx, action, bound)
 }
 func (o *laneToolOwner) End() {
 	p := o.endpoint.owner
